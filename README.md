@@ -1,8 +1,8 @@
 # Teamy
 
-A lightweight, AI-native Microsoft Teams client built with Nuxt 4 and Tauri 2.
+A lightweight Microsoft Teams **chat client** built with Nuxt 4 and Tauri 2.
 
-The official Teams app is a resource hog — it consumes gigabytes of RAM, takes ages to start, and buries useful features under layers of UI. Teamy is the opposite: a small native binary (~15 MB) with minimal memory footprint, a clean and simple interface focused on what matters (chats, channels, messages), and AI built in from day one — not bolted on as an afterthought. It connects directly to Microsoft Graph API via Azure Entra ID, with no server or proxy needed.
+Teamy is a chat-only alternative to the official Microsoft Teams desktop app. It covers the 90% use case -- reading and sending messages -- with a fraction of the RAM (~80 MB vs 300-500 MB). Calls, meetings, calendar, files, and other non-chat features are delegated to the official Teams app via deep links. It connects directly to Microsoft Graph API via Azure Entra ID, with no server or proxy needed.
 
 ![Teamy screenshot](docs/teamy-screenshot.png)
 
@@ -122,9 +122,19 @@ src-tauri/        # Tauri desktop shell (Rust)
 - Claude can modify and improve its own plugins based on user feedback
 - Self-improving workflows that adapt to user patterns over time
 
+## Not Supported (by design)
+
+Teamy is a chat-only client. The following are delegated to the official Teams app via deep links:
+
+- Audio/video calls and meetings
+- Calendar
+- Files and SharePoint
+- Apps marketplace, Copilot, Viva, Loop
+
 ## Known Limitations
 
 - **Channel unread messages** -- Microsoft Graph API does not expose unread counts or read state for channel messages. There is no workaround available.
 - **Incoming call notifications** -- Graph API does not support real-time call event notifications for client apps (requires server-side subscriptions not available in delegated context).
 - **Calling / joining meetings** -- Uses deep links to open calls and meetings in the official Microsoft Teams web/desktop client. Native calling is not supported.
 - **Sidebar sections** -- Custom sections (favorites, groups) are stored locally per device and not synced with Microsoft Teams or across devices.
+- **Real-time updates** -- Polling-based (5s active chat messages, 10s chat list). No WebSocket or push notifications.

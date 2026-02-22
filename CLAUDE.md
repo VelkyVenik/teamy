@@ -1,6 +1,6 @@
 # Teamy
 
-Microsoft Teams client built with Nuxt 4 + Tauri 2.
+Lightweight Microsoft Teams **chat-only** client built with Nuxt 4 + Tauri 2. Covers messaging (1:1 chats, group chats, team channels) with minimal resource usage. Calls, meetings, and other non-chat features are delegated to the official Teams app via deep links.
 
 ## Tech Stack
 
@@ -65,12 +65,22 @@ The app fetches both `/me/joinedTeams` and `/me/teamwork/associatedTeams` to sho
 ### Claude AI (Tauri only)
 Claude integration runs entirely through Rust. The API key is stored in macOS Keychain (`com.teamy.app` / `anthropic-api-key`). Streaming is handled via `claude_chat_stream` Rust command which emits `claude:stream-chunk`, `claude:stream-end`, and `claude:stream-error` events. The frontend (`useClaude`) listens for these events via Tauri's event system. API key management is in Settings page.
 
+## Unread Tracking
+
+- `useUnread()` manages sidebar unread state via `unreadChatIds` (module-level Set ref) and `localReadTimestamps` (reactive object)
+- `updateFromChats()` rebuilds unread set by comparing `lastMessagePreview.createdDateTime` against effective last-read timestamp
+- `touchReadTimestamp(chatId, messageTimestamp?)` uses `max(now, messageTimestamp)` to prevent clock-skew re-marking
+- Message thread "New messages" divider uses a local `threadLastRead` ref snapshot, decoupled from sidebar state. Auto-dismisses after 3 seconds.
+- Chat list refreshes every 10 seconds for unread detection (both `index.vue` and `chat/[chatId].vue`)
+
 ## Known Limitations
 
+- **Chat-only client** -- Calls, meetings, calendar, files, apps, Copilot, Viva, and Loop are not supported. Deep links open them in the official Teams app.
 - **Channel unread messages** -- Graph API does not provide unread counts or read state for channel messages. This is a Microsoft Graph API limitation with no known workaround.
 - **Incoming call notifications** -- Graph API does not support real-time call notifications for client apps. Push notifications for calls require server-side change notification subscriptions which are not available for calling events in delegated (user) context.
 - **Calling / joining meetings** -- Not natively supported. The app uses deep links to open calls and meetings in the official Microsoft Teams web/desktop app.
 - **Sidebar sections** -- Sections (favorites, custom groups) are stored locally per device. They are not synced with Microsoft Teams or across devices.
+- **Real-time updates** -- Polling-based (5s active chat messages, 10s chat list). No WebSocket or push notifications.
 
 ## Commands
 
