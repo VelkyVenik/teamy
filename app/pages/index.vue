@@ -26,7 +26,7 @@ const { load: loadSections } = useSections()
 const { results: peopleResults, loading: peopleLoading, searchPeople } = useSearch()
 const { createOneOnOneChat } = useCreateChat()
 const { currentUserId } = useCurrentUser()
-const { updateFromChats, totalUnread, markChatRead } = useUnread()
+const { updateFromChats, totalUnread, markChatRead, getLastReadDateTime } = useUnread()
 const { setTrayUnreadCount } = useTauri()
 const { graphFetch } = useGraph()
 
@@ -74,6 +74,9 @@ const isChannel = computed(() => currentView.value === 'channel')
 
 const lastReadDateTime = computed(() => {
   if (!activeChatId.value) return null
+  // Prefer local override (survives refreshChats), fall back to server data
+  const local = getLastReadDateTime(activeChatId.value)
+  if (local) return local
   const chat = chats.value.find(c => c.id === activeChatId.value)
   return chat?.viewpoint?.lastMessageReadDateTime ?? null
 })
@@ -98,10 +101,6 @@ function selectChat(chat: Chat) {
   activeChatId.value = chat.id
   threadMessage.value = null
   markChatRead(chat.id)
-  // Optimistically update so cached messages don't re-show as unread
-  if (chat.viewpoint) {
-    chat.viewpoint.lastMessageReadDateTime = new Date().toISOString()
-  }
 }
 
 async function selectChannel(teamId: string, channelId: string) {

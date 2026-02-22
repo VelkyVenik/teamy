@@ -7,7 +7,7 @@ const router = useRouter()
 const chatId = computed(() => route.params.chatId as string)
 const activeChatId = ref<string | null>(chatId.value)
 
-const { markChatRead } = useUnread()
+const { markChatRead, getLastReadDateTime } = useUnread()
 
 watch(chatId, (newId) => {
   activeChatId.value = newId
@@ -21,7 +21,11 @@ const { messages, loading, sendMessage } = useMessages(activeChatId)
 
 const currentChat = computed(() => chats.value.find(c => c.id === chatId.value))
 const title = computed(() => currentChat.value ? getChatDisplayName(currentChat.value) : '')
-const lastReadDateTime = computed(() => currentChat.value?.viewpoint?.lastMessageReadDateTime ?? null)
+const lastReadDateTime = computed(() => {
+  const local = getLastReadDateTime(chatId.value)
+  if (local) return local
+  return currentChat.value?.viewpoint?.lastMessageReadDateTime ?? null
+})
 
 onMounted(async () => {
   await Promise.allSettled([fetchChats(), fetchTeams()])
