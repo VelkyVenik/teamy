@@ -8,6 +8,7 @@ const props = defineProps<{
   isConsecutive?: boolean
   hideActions?: boolean
   isChannel?: boolean
+  highlight?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -137,7 +138,7 @@ watch([messageBodyRef, () => props.message.id], () => {
 <template>
   <div
     class="group relative flex gap-2 px-5 py-0.5 hover:bg-(--ui-bg-elevated)/50 transition-colors"
-    :class="isConsecutive ? 'pt-0' : 'pt-2'"
+    :class="[isConsecutive ? 'pt-0' : 'pt-2', highlight ? 'bg-primary-500/5' : '']"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
   >

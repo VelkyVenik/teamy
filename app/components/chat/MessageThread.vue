@@ -5,6 +5,7 @@ const props = defineProps<{
   messages: ChatMessage[]
   loading?: boolean
   isChannel?: boolean
+  lastReadDateTime?: string | null
 }>()
 
 const emit = defineEmits<{
@@ -13,58 +14,33 @@ const emit = defineEmits<{
 }>()
 
 const scrollContainer = ref<HTMLElement>()
-const isUserScrolledUp = ref(false)
-let programmaticScroll = false
+const unreadDivider = ref<HTMLElement>()
 
-function doScroll() {
-  if (scrollContainer.value) {
-    scrollContainer.value.scrollTop = scrollContainer.value.scrollHeight
-  }
+// Find the index of the first unread message
+const firstUnreadIndex = computed(() => {
+  if (!props.lastReadDateTime) return -1
+  return props.messages.findIndex(m => m.createdDateTime > props.lastReadDateTime!)
+})
+
+function isUnread(msg: ChatMessage): boolean {
+  if (!props.lastReadDateTime) return false
+  return msg.createdDateTime > props.lastReadDateTime
 }
 
-function scrollToBottom(force = false) {
-  if (!force && isUserScrolledUp.value) return
-  programmaticScroll = true
-  // Scroll at multiple stages to handle late-rendering HTML content
+function scrollToUnread() {
   nextTick(() => {
-    doScroll()
-    setTimeout(() => {
-      doScroll()
-      setTimeout(() => {
-        doScroll()
-        programmaticScroll = false
-      }, 100)
-    }, 50)
+    if (unreadDivider.value) {
+      unreadDivider.value.scrollIntoView({ block: 'center' })
+    }
   })
 }
 
-function handleScroll() {
-  if (programmaticScroll) return
-  if (!scrollContainer.value) return
-  const { scrollTop, scrollHeight, clientHeight } = scrollContainer.value
-  isUserScrolledUp.value = scrollHeight - scrollTop - clientHeight > 100
-}
-
-// When loading finishes (spinner → messages), reset and scroll to bottom
-watch(() => props.loading, (loading, wasLoading) => {
-  if (wasLoading && !loading) {
-    isUserScrolledUp.value = false
-    scrollToBottom(true)
+// When messages load, scroll to unread divider if present
+watch(() => props.messages.length, () => {
+  if (firstUnreadIndex.value > -1) {
+    scrollToUnread()
   }
 })
-
-// When the messages array ref changes (chat/channel switch)
-watch(() => props.messages, () => {
-  isUserScrolledUp.value = false
-  scrollToBottom(true)
-})
-
-// Scroll on new incoming messages unless user scrolled up
-watch(() => props.messages.length, (len, oldLen) => {
-  if (len !== oldLen) scrollToBottom()
-})
-
-defineExpose({ scrollToBottom })
 
 // --- Date separator logic ---
 function isSameDay(a: string, b: string): boolean {
@@ -117,8 +93,7 @@ function isConsecutiveMessage(index: number): boolean {
 <template>
   <div
     ref="scrollContainer"
-    class="flex-1 overflow-y-auto"
-    @scroll="handleScroll"
+    class="flex-1 overflow-y-auto flex flex-col-reverse"
   >
     <div v-if="loading" class="flex items-center justify-center h-full">
       <UIcon name="i-lucide-loader-2" class="size-6 animate-spin text-(--ui-text-muted)" />
@@ -140,10 +115,22 @@ function isConsecutiveMessage(index: number): boolean {
           <div class="flex-1 h-px bg-(--ui-border)" />
         </div>
 
+        <!-- Unread divider -->
+        <div
+          v-if="i === firstUnreadIndex"
+          ref="unreadDivider"
+          class="flex items-center gap-3 px-5 my-2"
+        >
+          <div class="flex-1 h-px bg-red-400" />
+          <span class="text-xs font-semibold text-red-400 whitespace-nowrap px-2">New messages</span>
+          <div class="flex-1 h-px bg-red-400" />
+        </div>
+
         <MessageBubble
           :message="msg"
           :is-consecutive="isConsecutiveMessage(i)"
           :is-channel="isChannel"
+          :highlight="isUnread(msg)"
           @reply="emit('reply', $event)"
           @react="(msg, type) => emit('react', msg, type)"
         />

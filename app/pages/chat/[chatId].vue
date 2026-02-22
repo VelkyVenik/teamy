@@ -21,6 +21,7 @@ const { messages, loading, sendMessage } = useMessages(activeChatId)
 
 const currentChat = computed(() => chats.value.find(c => c.id === chatId.value))
 const title = computed(() => currentChat.value ? getChatDisplayName(currentChat.value) : '')
+const lastReadDateTime = computed(() => currentChat.value?.viewpoint?.lastMessageReadDateTime ?? null)
 
 onMounted(async () => {
   await Promise.allSettled([fetchChats(), fetchTeams()])
@@ -62,7 +63,7 @@ function selectChannel(teamId: string, channelId: string) {
         <UIcon name="i-lucide-message-circle" class="size-4 text-(--ui-text-muted)" />
         <span class="text-sm font-medium text-(--ui-text-highlighted)">{{ title }}</span>
       </div>
-      <MessageThread :messages="messages" :loading="loading" />
+      <MessageThread :messages="messages" :loading="loading" :last-read-date-time="lastReadDateTime" />
       <ComposeBar :draft-key="chatId" @send="handleSend" />
     </template>
   </NuxtLayout>

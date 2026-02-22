@@ -58,6 +58,12 @@ const currentMemberCount = computed(() => {
 
 const isChannel = computed(() => currentView.value === 'channel')
 
+const lastReadDateTime = computed(() => {
+  if (!activeChatId.value) return null
+  const chat = chats.value.find(c => c.id === activeChatId.value)
+  return chat?.viewpoint?.lastMessageReadDateTime ?? null
+})
+
 const displayMessages = computed(() => {
   if (currentView.value === 'chat') return messages.value
   if (currentView.value === 'channel') return channelMessages.value
@@ -461,6 +467,7 @@ onUnmounted(() => {
               :messages="displayMessages"
               :loading="displayLoading"
               :is-channel="isChannel"
+              :last-read-date-time="lastReadDateTime"
               @reply="handleReply"
               @react="handleReact"
             />
