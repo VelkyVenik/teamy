@@ -1,9 +1,9 @@
 export function useGraphToken() {
-  const { user } = useOidcAuth()
+  const { getAccessToken } = useAuth()
 
-  const token = computed<string | null>(() => {
-    return user.value?.accessToken ?? null
-  })
+  async function getToken(): Promise<string> {
+    return await getAccessToken()
+  }
 
-  return { token }
+  return { getToken }
 }

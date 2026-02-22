@@ -1,5 +1,5 @@
 export default defineNuxtRouteMiddleware((to) => {
-  const { loggedIn } = useOidcAuth()
+  const { loggedIn } = useAuth()
   if (!loggedIn.value && to.path !== '/login') {
     return navigateTo('/login')
   }

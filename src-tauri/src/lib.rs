@@ -88,6 +88,11 @@ pub fn run() {
             commands::deeplink::open_teams_call,
             commands::deeplink::join_meeting,
             commands::deeplink::open_external_url,
+            // Auth
+            commands::auth::open_auth_window,
+            // Claude AI
+            commands::claude::claude_chat_stream,
+            commands::claude::has_claude_api_key,
             // Tray
             tray::set_tray_unread_count,
         ])

@@ -1,3 +1,5 @@
+import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import type { ClaudeChatMessage, ClaudeContext, ClaudeMessage, ClaudeStreamEvent, QuickAction } from '~/types/claude'
 
 const QUICK_ACTIONS: QuickAction[] = [
@@ -75,6 +77,7 @@ export function useClaude() {
   const isStreaming = useState('claude-streaming', () => false)
   const error = useState<string | null>('claude-error', () => null)
   const context = useState<ClaudeContext>('claude-context', () => ({}))
+  const hasApiKey = useState('claude-has-api-key', () => false)
 
   function setContext(ctx: Partial<ClaudeContext>) {
     context.value = { ...context.value, ...ctx }
@@ -118,6 +121,15 @@ export function useClaude() {
     error.value = null
   }
 
+  async function checkApiKey() {
+    try {
+      hasApiKey.value = await invoke<boolean>('has_claude_api_key')
+    }
+    catch {
+      hasApiKey.value = false
+    }
+  }
+
   async function sendMessage(content: string) {
     if (isStreaming.value) return
     error.value = null
@@ -152,6 +164,10 @@ export function useClaude() {
 
     isStreaming.value = true
 
+    let unlistenChunk: (() => void) | undefined
+    let unlistenEnd: (() => void) | undefined
+    let unlistenError: (() => void) | undefined
+
     try {
       // Build API messages (exclude streaming metadata)
       const apiMessages: ClaudeMessage[] = messages.value
@@ -161,86 +177,61 @@ export function useClaude() {
           content: m.content,
         }))
 
-      const response = await fetch('/api/claude/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: apiMessages,
-          system: buildSystemPrompt(context.value),
-          stream: true,
-        }),
-      })
+      // Set up event listeners
+      unlistenChunk = await listen<ClaudeStreamEvent>('claude:stream-chunk', (event) => {
+        const parsed = event.payload
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`)
-      }
-
-      const reader = response.body?.getReader()
-      if (!reader) throw new Error('No response stream')
-
-      const decoder = new TextDecoder()
-      let buffer = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-
-        buffer += decoder.decode(value, { stream: true })
-
-        // Parse SSE events from buffer
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            continue
-          }
-
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6).trim()
-            if (data === '[DONE]') continue
-
-            try {
-              const parsed = JSON.parse(data) as ClaudeStreamEvent
-
-              if (parsed.type === 'content_block_delta' && parsed.delta.type === 'text_delta') {
-                // Find the last assistant message and append text
-                const lastMsg = messages.value[messages.value.length - 1]
-                if (lastMsg && lastMsg.role === 'assistant') {
-                  lastMsg.content += parsed.delta.text
-                }
-              }
-
-              if (parsed.type === 'message_stop') {
-                const lastMsg = messages.value[messages.value.length - 1]
-                if (lastMsg) {
-                  lastMsg.isStreaming = false
-                }
-              }
-            }
-            catch {
-              // Ignore parse errors for partial data
-            }
+        if (parsed.type === 'content_block_delta' && parsed.delta.type === 'text_delta') {
+          const lastMsg = messages.value[messages.value.length - 1]
+          if (lastMsg && lastMsg.role === 'assistant') {
+            lastMsg.content += parsed.delta.text
           }
         }
-      }
 
-      // Ensure streaming flag is cleared
-      const lastMsg = messages.value[messages.value.length - 1]
-      if (lastMsg) {
-        lastMsg.isStreaming = false
-      }
+        if (parsed.type === 'message_stop') {
+          const lastMsg = messages.value[messages.value.length - 1]
+          if (lastMsg) {
+            lastMsg.isStreaming = false
+          }
+        }
+      })
+
+      unlistenEnd = await listen('claude:stream-end', () => {
+        const lastMsg = messages.value[messages.value.length - 1]
+        if (lastMsg) {
+          lastMsg.isStreaming = false
+        }
+        isStreaming.value = false
+      })
+
+      unlistenError = await listen<string>('claude:stream-error', (event) => {
+        error.value = event.payload
+        const lastMsg = messages.value[messages.value.length - 1]
+        if (lastMsg?.role === 'assistant' && lastMsg.content === '') {
+          messages.value.pop()
+        }
+        isStreaming.value = false
+      })
+
+      // Invoke the Rust command
+      await invoke('claude_chat_stream', {
+        request: {
+          messages: apiMessages,
+          system: buildSystemPrompt(context.value),
+        },
+      })
     }
     catch (err) {
-      error.value = err instanceof Error ? err.message : 'Unknown error'
-      // Remove the empty assistant message on error
+      error.value = err instanceof Error ? err.message : String(err)
       const lastMsg = messages.value[messages.value.length - 1]
       if (lastMsg?.role === 'assistant' && lastMsg.content === '') {
         messages.value.pop()
       }
-    }
-    finally {
       isStreaming.value = false
+      // Clean up listeners on invoke error
+      unlistenChunk?.()
+      unlistenEnd?.()
+      unlistenError?.()
     }
   }
 
@@ -288,10 +279,12 @@ export function useClaude() {
     messages: readonly(messages),
     isStreaming: readonly(isStreaming),
     error: readonly(error),
+    hasApiKey: readonly(hasApiKey),
     quickActions: QUICK_ACTIONS,
     sendMessage,
     clearMessages,
     setContext,
     refreshContext,
+    checkApiKey,
   }
 }

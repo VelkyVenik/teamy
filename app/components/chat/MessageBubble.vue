@@ -15,7 +15,7 @@ const emit = defineEmits<{
 }>()
 
 const { currentUserId } = useCurrentUser()
-const { token } = useGraphToken()
+const { getToken } = useGraphToken()
 const isMe = computed(() => props.message.from?.user?.id === currentUserId.value)
 const senderName = computed(() => props.message.from?.user?.displayName ?? 'Unknown')
 const avatarUrl = computed(() => {
@@ -92,19 +92,22 @@ const messageBodyRef = ref<HTMLElement>()
 
 async function loadAuthImages() {
   const container = messageBodyRef.value
-  if (!container || !token.value) return
+  if (!container) return
 
   const imgs = container.querySelectorAll<HTMLImageElement>('img')
-  for (const img of imgs) {
+  const authImgs = Array.from(imgs).filter((img) => {
     const src = img.getAttribute('src') || ''
-    // Only process Graph API or Teams CDN URLs that need auth
-    if (!src.includes('graph.microsoft.com') && !src.includes('.asm.skype.com')) continue
-    // Skip already processed images
-    if (src.startsWith('blob:')) continue
+    return (src.includes('graph.microsoft.com') || src.includes('.asm.skype.com')) && !src.startsWith('blob:')
+  })
+  if (!authImgs.length) return
 
+  const tokenValue = await getToken()
+
+  for (const img of authImgs) {
+    const src = img.getAttribute('src') || ''
     try {
       const res = await fetch(src, {
-        headers: { Authorization: `Bearer ${token.value}` },
+        headers: { Authorization: `Bearer ${tokenValue}` },
       })
       if (res.ok) {
         const blob = await res.blob()

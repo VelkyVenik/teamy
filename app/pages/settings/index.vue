@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
+
 const colorMode = useColorMode()
 
 const notificationSettings = reactive({
@@ -16,6 +18,43 @@ const appearanceSettings = reactive({
 function toggleColorMode() {
   colorMode.preference = colorMode.value === 'dark' ? 'light' : 'dark'
 }
+
+// Claude AI API key management
+const claudeKeyStatus = ref<'loading' | 'stored' | 'not-stored'>('loading')
+const claudeKeyInput = ref('')
+const claudeKeySaving = ref(false)
+
+async function checkClaudeKey() {
+  try {
+    const stored = await invoke<string | null>('keychain_get', { key: 'anthropic-api-key' })
+    claudeKeyStatus.value = stored ? 'stored' : 'not-stored'
+  }
+  catch {
+    claudeKeyStatus.value = 'not-stored'
+  }
+}
+
+async function saveClaudeKey() {
+  if (!claudeKeyInput.value.trim()) return
+  claudeKeySaving.value = true
+  try {
+    await invoke('keychain_store', { key: 'anthropic-api-key', value: claudeKeyInput.value.trim() })
+    claudeKeyStatus.value = 'stored'
+    claudeKeyInput.value = ''
+  }
+  finally {
+    claudeKeySaving.value = false
+  }
+}
+
+async function removeClaudeKey() {
+  await invoke('keychain_delete', { key: 'anthropic-api-key' })
+  claudeKeyStatus.value = 'not-stored'
+}
+
+onMounted(() => {
+  checkClaudeKey()
+})
 </script>
 
 <template>
@@ -108,6 +147,58 @@ function toggleColorMode() {
                 </div>
                 <USwitch v-model="notificationSettings.dnd" />
               </div>
+            </div>
+          </section>
+
+          <USeparator />
+
+          <!-- Claude AI -->
+          <section>
+            <h2 class="text-base font-semibold mb-4 text-(--ui-text-highlighted)">Claude AI</h2>
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <p class="text-sm font-medium">API Key</p>
+                  <p class="text-xs text-(--ui-text-muted)">
+                    <template v-if="claudeKeyStatus === 'loading'">Checking...</template>
+                    <template v-else-if="claudeKeyStatus === 'stored'">Key stored in Keychain</template>
+                    <template v-else>No key stored</template>
+                  </p>
+                </div>
+                <UBadge
+                  v-if="claudeKeyStatus !== 'loading'"
+                  :color="claudeKeyStatus === 'stored' ? 'success' : 'neutral'"
+                  variant="subtle"
+                >
+                  {{ claudeKeyStatus === 'stored' ? 'Active' : 'Not set' }}
+                </UBadge>
+              </div>
+              <div class="flex gap-2">
+                <UInput
+                  v-model="claudeKeyInput"
+                  type="password"
+                  :placeholder="claudeKeyStatus === 'stored' ? 'Enter new key to update...' : 'Enter Anthropic API key...'"
+                  class="flex-1"
+                  size="sm"
+                />
+                <UButton
+                  size="sm"
+                  :loading="claudeKeySaving"
+                  :disabled="!claudeKeyInput.trim()"
+                  @click="saveClaudeKey"
+                >
+                  Save
+                </UButton>
+              </div>
+              <UButton
+                v-if="claudeKeyStatus === 'stored'"
+                variant="soft"
+                color="error"
+                size="xs"
+                @click="removeClaudeKey"
+              >
+                Remove API key
+              </UButton>
             </div>
           </section>
 

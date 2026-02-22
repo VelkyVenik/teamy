@@ -24,3 +24,6 @@ open = "5"
 urlencoding = "2"
 security-framework = "3"
 tauri-plugin-store = "2"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+futures-util = "0.3"
+url = "2"

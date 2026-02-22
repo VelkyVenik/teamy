@@ -3,13 +3,19 @@ definePageMeta({
   layout: false,
 })
 
-const { loggedIn, login } = useOidcAuth()
+const { loggedIn, login } = useAuth()
 const loading = ref(false)
+const error = ref<string | null>(null)
 
 async function handleLogin() {
   loading.value = true
+  error.value = null
   try {
-    await login('entra')
+    await login()
+  }
+  catch (err) {
+    error.value = err instanceof Error ? err.message : String(err)
+    console.error('[Login] Failed:', err)
   }
   finally {
     loading.value = false
@@ -36,15 +42,26 @@ watch(loggedIn, (value) => {
         </div>
       </template>
 
-      <UButton
-        block
-        size="lg"
-        icon="i-heroicons-arrow-right-end-on-rectangle"
-        :loading="loading"
-        @click="handleLogin"
-      >
-        Sign in with Microsoft
-      </UButton>
+      <div class="space-y-3">
+        <UAlert
+          v-if="error"
+          color="error"
+          variant="subtle"
+          :title="error"
+          :close-icon="'i-lucide-x'"
+          @close="error = null"
+        />
+
+        <UButton
+          block
+          size="lg"
+          icon="i-heroicons-arrow-right-end-on-rectangle"
+          :loading="loading"
+          @click="handleLogin"
+        >
+          Sign in with Microsoft
+        </UButton>
+      </div>
     </UCard>
   </div>
 </template>

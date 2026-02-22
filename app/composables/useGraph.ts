@@ -11,17 +11,7 @@ const BASE_DELAY_MS = 1000
 export function useGraph() {
   const baseUrl = 'https://graph.microsoft.com/v1.0'
 
-  // Hoist token access to setup level so useOidcAuth() is called synchronously
-  // during composable initialization — not inside async callbacks where the
-  // Nuxt app context may be lost.
-  const { token } = useGraphToken()
-
-  function getToken(): string {
-    if (!token.value) {
-      throw createGraphError('NO_TOKEN', 'No Graph API access token available. Please sign in.')
-    }
-    return token.value
-  }
+  const { getToken } = useGraphToken()
 
   function createGraphError(code: string, message: string): GraphApiError & Error {
     const err = new Error(message) as GraphApiError & Error
@@ -30,7 +20,7 @@ export function useGraph() {
   }
 
   async function graphFetch<T>(path: string, options: GraphFetchOptions = {}): Promise<T> {
-    const accessToken = getToken()
+    const accessToken = await getToken()
 
     const url = new URL(path.startsWith('http') ? path : `${baseUrl}${path}`)
     if (options.params) {
@@ -69,6 +59,25 @@ export function useGraph() {
           if (attempt < MAX_RETRIES) {
             await new Promise(resolve => setTimeout(resolve, delay))
             continue
+          }
+        }
+
+        // On 401, try refreshing token once
+        if (status === 401 && attempt === 0) {
+          try {
+            const freshToken = await getToken()
+            const retryResponse = await $fetch<T>(url.toString(), {
+              ...fetchOptions,
+              headers: {
+                Authorization: `Bearer ${freshToken}`,
+                'Content-Type': 'application/json',
+                ...extraHeaders,
+              },
+            })
+            return retryResponse
+          }
+          catch {
+            // Fall through to error handling
           }
         }
 
