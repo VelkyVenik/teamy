@@ -1,0 +1,22 @@
+{
+  "identifier": "main-capability",
+  "description": "Main capability for the Teamy app",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-is-visible",
+    "core:menu:default",
+    "core:tray:default",
+    "core:event:default",
+    "shell:default",
+    "notification:default",
+    "global-shortcut:default",
+    "autostart:default",
+    "store:default",
+    "core:window:allow-set-badge-count"
+  ]
+}
