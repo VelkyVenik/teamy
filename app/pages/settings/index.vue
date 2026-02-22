@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { invoke } from '@tauri-apps/api/core'
 
+const router = useRouter()
 const colorMode = useColorMode()
+
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Escape') router.push('/')
+}
+
+onMounted(() => window.addEventListener('keydown', onKeydown))
+onUnmounted(() => window.removeEventListener('keydown', onKeydown))
 
 const notificationSettings = reactive({
   enabled: true,
@@ -87,6 +95,10 @@ onMounted(() => {
     </template>
 
     <template #default>
+      <div class="flex items-center gap-2 px-4 py-3 border-b border-(--ui-border)">
+        <UButton icon="i-lucide-x" variant="ghost" color="neutral" size="xs" square to="/" />
+        <span class="text-sm font-medium text-(--ui-text-highlighted)">Settings</span>
+      </div>
       <div class="flex-1 overflow-y-auto">
         <div class="max-w-xl mx-auto px-6 py-8 space-y-8">
           <!-- Appearance -->
