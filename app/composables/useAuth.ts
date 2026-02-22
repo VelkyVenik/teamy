@@ -115,9 +115,10 @@ async function loginViaTauri() {
   const { invoke } = await import('@tauri-apps/api/core')
   const { listen } = await import('@tauri-apps/api/event')
 
-  // Generate PKCE
+  // Generate PKCE + state nonce for CSRF protection
   const codeVerifier = generateCodeVerifier()
   const codeChallenge = await generateCodeChallenge(codeVerifier)
+  const state = generateCodeVerifier()
 
   // Build Azure AD authorization URL
   const params = new URLSearchParams({
@@ -128,6 +129,7 @@ async function loginViaTauri() {
     code_challenge: codeChallenge,
     code_challenge_method: 'S256',
     response_mode: 'query',
+    state,
   })
 
   const authUrl = `https://login.microsoftonline.com/${getTenantId()}/oauth2/v2.0/authorize?${params}`
@@ -139,7 +141,11 @@ async function loginViaTauri() {
     const code = await new Promise<string>((resolve, reject) => {
       const setup = async () => {
         unlisteners.push(
-          await listen<{ code: string }>('auth:callback', (event) => {
+          await listen<{ code: string, state?: string }>('auth:callback', (event) => {
+            if (event.payload.state && event.payload.state !== state) {
+              reject(new Error('OAuth state mismatch — possible CSRF'))
+              return
+            }
             resolve(event.payload.code)
           }),
         )
@@ -250,6 +256,9 @@ async function refreshAccessToken(): Promise<TokenResponse> {
   return response.json()
 }
 
+// Guard against concurrent refresh requests (token stampede prevention)
+let pendingRefresh: Promise<string> | null = null
+
 async function getTauriAccessToken(): Promise<string> {
   if (!tauriTokens.value) {
     throw new Error('No tokens. Please sign in.')
@@ -260,15 +269,26 @@ async function getTauriAccessToken(): Promise<string> {
     return tauriTokens.value.accessToken
   }
 
-  // Refresh the token
-  const tokenData = await refreshAccessToken()
-  tauriTokens.value = {
-    accessToken: tokenData.access_token,
-    refreshToken: tokenData.refresh_token,
-    expiresAt: Date.now() + tokenData.expires_in * 1000,
+  // If a refresh is already in flight, wait for it
+  if (pendingRefresh) {
+    return pendingRefresh
   }
 
-  return tokenData.access_token
+  // Refresh the token (single flight)
+  pendingRefresh = refreshAccessToken()
+    .then((tokenData) => {
+      tauriTokens.value = {
+        accessToken: tokenData.access_token,
+        refreshToken: tokenData.refresh_token,
+        expiresAt: Date.now() + tokenData.expires_in * 1000,
+      }
+      return tokenData.access_token
+    })
+    .finally(() => {
+      pendingRefresh = null
+    })
+
+  return pendingRefresh
 }
 
 // --- Utilities ---

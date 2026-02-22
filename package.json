@@ -13,6 +13,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@azure/msal-browser": "^4.12.0",
     "@nuxt/ui": "^4.4.0",
     "@pinia/nuxt": "^0.11.3",
     "@tauri-apps/api": "^2.10.1",
@@ -21,13 +22,14 @@
     "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "@tauri-apps/plugin-store": "^2.4.2",
+    "dompurify": "^3.3.1",
     "nuxt": "^4.3.1",
-    "@azure/msal-browser": "^4.12.0",
     "vue": "^3.5.28",
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@nuxt/icon": "^2.2.1",
-    "@tauri-apps/cli": "^2.10.0"
+    "@tauri-apps/cli": "^2.10.0",
+    "@types/dompurify": "^3.2.0"
   }
 }

@@ -1,13 +1,20 @@
 import type { Configuration, PopupRequest } from '@azure/msal-browser'
 
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+
+function getRedirectUri(): string {
+  if (typeof window === 'undefined') return 'http://localhost'
+  return window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost'
+}
+
 export const msalConfig: Configuration = {
   auth: {
     clientId: import.meta.env.VITE_AZURE_CLIENT_ID,
     authority: `https://login.microsoftonline.com/${import.meta.env.VITE_AZURE_TENANT_ID}`,
-    redirectUri: window.location.origin.startsWith('http') ? window.location.origin : 'http://localhost',
+    redirectUri: getRedirectUri(),
   },
   cache: {
-    cacheLocation: 'memoryStorage',
+    cacheLocation: isTauri ? 'memoryStorage' : 'sessionStorage',
   },
 }
 

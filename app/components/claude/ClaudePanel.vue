@@ -194,22 +194,41 @@ watch(
 </template>
 
 <script lang="ts">
-// Simple markdown rendering (no external dependency)
+import DOMPurify from 'dompurify'
+
+// Simple markdown rendering with sanitization
 function renderMarkdown(text: string): string {
   if (!text) return ''
 
-  return text
-    // Code blocks
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
-    // Inline code
-    .replace(/`([^`]+)`/g, '<code>$1</code>')
+  const html = text
+    // Code blocks — escape HTML inside code blocks first
+    .replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
+      const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return `<pre><code class="language-${lang}">${escaped}</code></pre>`
+    })
+    // Inline code — escape HTML inside
+    .replace(/`([^`]+)`/g, (_match: string, code: string) => {
+      const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return `<code>${escaped}</code>`
+    })
     // Bold
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
     // Italic
     .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    // Links
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+    // Links — only allow http/https protocols
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match: string, linkText: string, href: string) => {
+      if (href.startsWith('https://') || href.startsWith('http://')) {
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer">${linkText}</a>`
+      }
+      return linkText
+    })
     // Line breaks
     .replace(/\n/g, '<br>')
+
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'a', 'br', 'p', 'ul', 'ol', 'li', 'span'],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
+    ALLOW_DATA_ATTR: false,
+  })
 }
 </script>

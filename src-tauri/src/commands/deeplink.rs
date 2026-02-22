@@ -25,5 +25,10 @@ pub async fn join_meeting(join_url: String) -> Result<(), String> {
 
 #[command]
 pub async fn open_external_url(url: String) -> Result<(), String> {
+    let parsed: url::Url = url.parse().map_err(|e| format!("Invalid URL: {e}"))?;
+    match parsed.scheme() {
+        "https" | "http" => {}
+        scheme => return Err(format!("Disallowed URL scheme: {scheme}")),
+    }
     open::that(&url).map_err(|e| format!("Failed to open URL: {}", e))
 }

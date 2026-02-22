@@ -26,7 +26,7 @@ const claudeKeySaving = ref(false)
 
 async function checkClaudeKey() {
   try {
-    const stored = await invoke<string | null>('keychain_get', { key: 'anthropic-api-key' })
+    const stored = await invoke<boolean>('has_claude_api_key')
     claudeKeyStatus.value = stored ? 'stored' : 'not-stored'
   }
   catch {

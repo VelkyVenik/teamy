@@ -1,6 +1,6 @@
-import { invoke } from '@tauri-apps/api/core'
-import { listen } from '@tauri-apps/api/event'
 import type { ClaudeChatMessage, ClaudeContext, ClaudeMessage, ClaudeStreamEvent, QuickAction } from '~/types/claude'
+
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
@@ -72,12 +72,13 @@ function buildSystemPrompt(context: ClaudeContext): string {
   return parts.join('\n')
 }
 
+const messages = ref<ClaudeChatMessage[]>([])
+const isStreaming = ref(false)
+const error = ref<string | null>(null)
+const context = ref<ClaudeContext>({})
+const hasApiKey = ref(false)
+
 export function useClaude() {
-  const messages = useState<ClaudeChatMessage[]>('claude-messages', () => [])
-  const isStreaming = useState('claude-streaming', () => false)
-  const error = useState<string | null>('claude-error', () => null)
-  const context = useState<ClaudeContext>('claude-context', () => ({}))
-  const hasApiKey = useState('claude-has-api-key', () => false)
 
   function setContext(ctx: Partial<ClaudeContext>) {
     context.value = { ...context.value, ...ctx }
@@ -122,7 +123,12 @@ export function useClaude() {
   }
 
   async function checkApiKey() {
+    if (!isTauri) {
+      hasApiKey.value = false
+      return
+    }
     try {
+      const { invoke } = await import('@tauri-apps/api/core')
       hasApiKey.value = await invoke<boolean>('has_claude_api_key')
     }
     catch {
@@ -132,6 +138,10 @@ export function useClaude() {
 
   async function sendMessage(content: string) {
     if (isStreaming.value) return
+    if (!isTauri) {
+      error.value = 'Claude AI requires the desktop app'
+      return
+    }
     error.value = null
 
     // Refresh context from stores before sending
@@ -169,6 +179,9 @@ export function useClaude() {
     let unlistenError: (() => void) | undefined
 
     try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const { listen } = await import('@tauri-apps/api/event')
+
       // Build API messages (exclude streaming metadata)
       const apiMessages: ClaudeMessage[] = messages.value
         .filter((m) => !m.isStreaming)
@@ -202,6 +215,10 @@ export function useClaude() {
           lastMsg.isStreaming = false
         }
         isStreaming.value = false
+        // Clean up listeners on success
+        unlistenChunk?.()
+        unlistenEnd?.()
+        unlistenError?.()
       })
 
       unlistenError = await listen<string>('claude:stream-error', (event) => {
@@ -211,6 +228,10 @@ export function useClaude() {
           messages.value.pop()
         }
         isStreaming.value = false
+        // Clean up listeners on error
+        unlistenChunk?.()
+        unlistenEnd?.()
+        unlistenError?.()
       })
 
       // Invoke the Rust command

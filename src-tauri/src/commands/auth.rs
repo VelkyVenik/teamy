@@ -7,6 +7,7 @@ use tauri::{command, AppHandle, Emitter, Manager};
 #[derive(Clone, serde::Serialize)]
 struct AuthCodePayload {
     code: String,
+    state: Option<String>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -56,10 +57,12 @@ pub async fn open_auth_window(
             .collect();
 
         if let Some(code) = params.get("code") {
+            let state = params.get("state").cloned();
             let _ = app_nav.emit(
                 "auth:callback",
                 AuthCodePayload {
                     code: code.clone(),
+                    state,
                 },
             );
         } else {

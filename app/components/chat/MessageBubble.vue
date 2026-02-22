@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DOMPurify from 'dompurify'
 import type { ChatMessage } from '~~/types/graph'
 
 const props = defineProps<{
@@ -120,6 +121,14 @@ async function loadAuthImages() {
   }
 }
 
+function sanitizeHtml(html: string): string {
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'br', 'p', 'ul', 'ol', 'li', 'pre', 'code', 'span', 'div', 'blockquote', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'del', 'ins', 'sub', 'sup'],
+    ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'width', 'height', 'colspan', 'rowspan'],
+    ALLOW_DATA_ATTR: false,
+  })
+}
+
 watch([messageBodyRef, () => props.message.id], () => {
   nextTick(loadAuthImages)
 }, { flush: 'post' })
@@ -168,7 +177,7 @@ watch([messageBodyRef, () => props.message.id], () => {
 
       <!-- Message body -->
       <div ref="messageBodyRef" class="text-[15px] leading-relaxed text-(--ui-text)">
-        <div v-if="message.body.contentType === 'html'" v-html="message.body.content" />
+        <div v-if="message.body.contentType === 'html'" v-html="sanitizeHtml(message.body.content)" />
         <span v-else>{{ message.body.content }}</span>
       </div>
 
