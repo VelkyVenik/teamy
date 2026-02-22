@@ -3,13 +3,13 @@ import type { Chat } from '~/types/graph'
 // Module-level shared state — all callers of useUnread() see the same data
 const unreadChatIds = ref<Set<string>>(new Set())
 
-// Local overrides that survive refreshChats() replacing chat objects
-const localReadTimestamps = new Map<string, string>()
+// Plain reactive object — Vue tracks property access/mutation reliably
+const localReadTimestamps = reactive<Record<string, string>>({})
 
 const totalUnread = computed(() => unreadChatIds.value.size)
 
 function getEffectiveLastRead(chat: Chat): string | undefined {
-  return localReadTimestamps.get(chat.id) ?? chat.viewpoint?.lastMessageReadDateTime
+  return localReadTimestamps[chat.id] ?? chat.viewpoint?.lastMessageReadDateTime
 }
 
 function updateFromChats(chats: Chat[]) {
@@ -28,8 +28,24 @@ function isUnread(chatId: string): boolean {
   return unreadChatIds.value.has(chatId)
 }
 
-function getLastReadDateTime(chatId: string): string | null {
-  return localReadTimestamps.get(chatId) ?? null
+/** Best-known last-read timestamp for divider snapshots (max of local + server). */
+function getSnapshotLastRead(chatId: string, serverTimestamp?: string): string | null {
+  const local = localReadTimestamps[chatId]
+  if (local && serverTimestamp) return local > serverTimestamp ? local : serverTimestamp
+  return local ?? serverTimestamp ?? null
+}
+
+/** Update only the local timestamp (no API call) — used while actively viewing.
+ *  Accepts an optional messageTimestamp to prevent clock-skew from re-marking as unread. */
+function touchReadTimestamp(chatId: string, messageTimestamp?: string) {
+  const now = new Date().toISOString()
+  localReadTimestamps[chatId] = messageTimestamp && messageTimestamp > now
+    ? messageTimestamp
+    : now
+
+  const updated = new Set(unreadChatIds.value)
+  updated.delete(chatId)
+  unreadChatIds.value = updated
 }
 
 export function useUnread() {
@@ -37,8 +53,7 @@ export function useUnread() {
   const { currentUserId } = useCurrentUser()
 
   async function markChatRead(chatId: string) {
-    const now = new Date().toISOString()
-    localReadTimestamps.set(chatId, now)
+    localReadTimestamps[chatId] = new Date().toISOString()
 
     // Optimistically remove from unread set
     const updated = new Set(unreadChatIds.value)
@@ -62,6 +77,7 @@ export function useUnread() {
     updateFromChats,
     isUnread,
     markChatRead,
-    getLastReadDateTime,
+    touchReadTimestamp,
+    getSnapshotLastRead,
   }
 }

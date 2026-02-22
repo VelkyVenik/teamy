@@ -93,15 +93,22 @@ export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
 
   async function sendMessage(content: string, contentType: 'text' | 'html' = 'text', images: PendingImage[] = []) {
     if (!chatId.value) return
+    const id = chatId.value
 
     const payload = await buildMessagePayload(content, images)
-    await graphFetch(`/me/chats/${chatId.value}/messages`, {
+    const sent = await graphFetch<ChatMessage>(`/me/chats/${id}/messages`, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
 
-    // Refresh to get the sent message with server-assigned ID
-    await pollForNew()
+    // Immediately append the sent message so it appears instantly
+    if (sent?.id && !messages.value.some(m => m.id === sent.id)) {
+      // Ensure fields that the API may omit are present
+      sent.reactions ??= []
+      sent.attachments ??= []
+      sent.mentions ??= []
+      updateMessages(id, [...messages.value, sent], nextLink.value)
+    }
   }
 
   async function pollForNew() {
@@ -161,7 +168,7 @@ export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
       hasMore.value = false
       stopPolling()
     }
-  })
+  }, { immediate: true })
 
   // Cleanup on unmount
   onUnmounted(() => {

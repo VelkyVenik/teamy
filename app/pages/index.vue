@@ -26,7 +26,7 @@ const { load: loadSections } = useSections()
 const { results: peopleResults, loading: peopleLoading, searchPeople } = useSearch()
 const { createOneOnOneChat } = useCreateChat()
 const { currentUserId } = useCurrentUser()
-const { updateFromChats, totalUnread, markChatRead, getLastReadDateTime } = useUnread()
+const { updateFromChats, totalUnread, markChatRead, touchReadTimestamp, getSnapshotLastRead } = useUnread()
 const { setTrayUnreadCount } = useTauri()
 const { graphFetch } = useGraph()
 
@@ -72,14 +72,9 @@ const currentMemberCount = computed(() => {
 
 const isChannel = computed(() => currentView.value === 'channel')
 
-const lastReadDateTime = computed(() => {
-  if (!activeChatId.value) return null
-  // Prefer local override (survives refreshChats), fall back to server data
-  const local = getLastReadDateTime(activeChatId.value)
-  if (local) return local
-  const chat = chats.value.find(c => c.id === activeChatId.value)
-  return chat?.viewpoint?.lastMessageReadDateTime ?? null
-})
+// Local snapshot of the read position — captured once on chat open,
+// decoupled from the sidebar's localReadTimestamps reactive chain.
+const threadLastRead = ref<string | null>(null)
 
 const displayMessages = computed(() => {
   if (currentView.value === 'chat') return messages.value
@@ -96,10 +91,13 @@ const displayLoading = computed(() => {
 const loadError = computed(() => chatsError.value || channelsError.value)
 
 function selectChat(chat: Chat) {
+  clearTimeout(dividerTimer)
+  dividerTimer = undefined
   activeTeamId.value = null
   activeChannelId.value = null
   activeChatId.value = chat.id
   threadMessage.value = null
+  threadLastRead.value = getSnapshotLastRead(chat.id, chat.viewpoint?.lastMessageReadDateTime)
   markChatRead(chat.id)
 }
 
@@ -138,6 +136,8 @@ async function selectChannel(teamId: string, channelId: string) {
 async function handleSend(content: string, images: PendingImage[] = []) {
   if (currentView.value === 'chat' && activeChatId.value) {
     await sendChatMessage(content, 'text', images)
+    // User sent a message — they're caught up, clear the divider
+    threadLastRead.value = new Date().toISOString()
   }
   else if (currentView.value === 'channel' && activeTeamId.value && activeChannelId.value) {
     await sendChannelMessage(activeTeamId.value, activeChannelId.value, content, 'text', images)
@@ -402,6 +402,24 @@ watch(totalUnread, async (count) => {
   }
 })
 
+// Auto-dismiss the "New messages" divider after a short delay
+let dividerTimer: ReturnType<typeof setTimeout> | undefined
+
+// Keep sidebar read timestamp current while viewing
+watch(messages, (msgs) => {
+  if (msgs.length && activeChatId.value) {
+    const last = msgs[msgs.length - 1]
+    touchReadTimestamp(activeChatId.value, last.createdDateTime)
+    // Once messages are visible, start a one-time timer to clear the divider
+    if (threadLastRead.value && !dividerTimer) {
+      dividerTimer = setTimeout(() => {
+        threadLastRead.value = new Date().toISOString()
+        dividerTimer = undefined
+      }, 3000)
+    }
+  }
+})
+
 // React to chat list refreshes
 watch(chats, c => updateFromChats(c))
 
@@ -428,7 +446,7 @@ onMounted(async () => {
   startPresenceForChats()
 
   // Periodic refresh for unread detection
-  refreshTimer = setInterval(() => refreshChats(), 30_000)
+  refreshTimer = setInterval(() => refreshChats(), 10_000)
 })
 
 onUnmounted(() => {
@@ -511,7 +529,7 @@ onUnmounted(() => {
               :messages="displayMessages"
               :loading="displayLoading"
               :is-channel="isChannel"
-              :last-read-date-time="lastReadDateTime"
+              :last-read-date-time="threadLastRead"
               @reply="handleReply"
               @react="handleReact"
             />
