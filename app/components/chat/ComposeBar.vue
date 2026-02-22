@@ -88,6 +88,26 @@ function handleSend() {
   })
 }
 
+function handleInput() {
+  const val = content.value
+  if (!val) return
+  const last = val[val.length - 1]
+  if (last !== ' ' && last !== '\n') return
+
+  const replaced = replaceEmoticons(val)
+  if (replaced === val) return
+
+  const ta = textareaRef.value?.textareaRef
+  const cursorPos = ta?.selectionStart ?? val.length
+  const diff = replaced.length - val.length
+
+  content.value = replaced
+
+  nextTick(() => {
+    ta?.setSelectionRange(cursorPos + diff, cursorPos + diff)
+  })
+}
+
 function handleKeydown(e: KeyboardEvent) {
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault()
@@ -148,6 +168,7 @@ onUnmounted(() => {
           class="flex-1"
           @keydown="handleKeydown"
           @paste="handlePaste"
+          @input="handleInput"
         />
         <UButton
           icon="i-lucide-send-horizontal"

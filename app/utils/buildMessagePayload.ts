@@ -26,13 +26,15 @@ export async function buildMessagePayload(
   content: string,
   images: PendingImage[] = [],
 ): Promise<SendMessagePayload> {
-  if (images.length === 0) {
-    return { body: { contentType: 'text', content } }
-  }
+  content = replaceEmoticons(content)
 
   let html = ''
   if (content.trim()) {
     html += `<p>${escapeHtml(content)}</p>`
+  }
+
+  if (images.length === 0) {
+    return { body: { contentType: 'html', content: html } }
   }
 
   const hostedContents = await Promise.all(

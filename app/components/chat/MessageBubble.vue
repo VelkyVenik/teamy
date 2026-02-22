@@ -122,8 +122,12 @@ async function loadAuthImages() {
   }
 }
 
+function replaceEmojiTags(html: string): string {
+  return html.replace(/<emoji[^>]*?alt="([^"]*)"[^>]*?\/?>(<\/emoji>)?/gi, '$1')
+}
+
 function sanitizeHtml(html: string): string {
-  return DOMPurify.sanitize(html, {
+  return DOMPurify.sanitize(replaceEmojiTags(html), {
     ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'br', 'p', 'ul', 'ol', 'li', 'pre', 'code', 'span', 'div', 'blockquote', 'img', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'del', 'ins', 'sub', 'sup'],
     ALLOWED_ATTR: ['href', 'target', 'rel', 'class', 'style', 'src', 'alt', 'width', 'height', 'colspan', 'rowspan'],
     ALLOW_DATA_ATTR: false,
