@@ -85,7 +85,7 @@ onMounted(async () => {
         </div>
       </div>
       <MessageThread :messages="channelMessages" :loading="loading" />
-      <ComposeBar @send="handleSend" />
+      <ComposeBar :draft-key="`${teamId}-${channelId}`" @send="handleSend" />
     </template>
   </NuxtLayout>
 </template>

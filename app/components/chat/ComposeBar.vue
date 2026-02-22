@@ -6,13 +6,21 @@ const MAX_IMAGE_SIZE = 4 * 1024 * 1024 // 4 MB
 const props = defineProps<{
   loading?: boolean
   placeholder?: string
+  draftKey?: string
 }>()
 
 const emit = defineEmits<{
   send: [content: string, images: PendingImage[]]
 }>()
 
-const content = ref('')
+const drafts = useState<Record<string, string>>('compose-drafts', () => ({}))
+
+const content = computed({
+  get: () => props.draftKey ? (drafts.value[props.draftKey] ?? '') : '',
+  set: (val: string) => {
+    if (props.draftKey) drafts.value[props.draftKey] = val
+  },
+})
 const textareaRef = ref<{ textareaRef?: HTMLTextAreaElement }>()
 const pendingImages = ref<PendingImage[]>([])
 const isDragging = ref(false)

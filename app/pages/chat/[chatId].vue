@@ -63,7 +63,7 @@ function selectChannel(teamId: string, channelId: string) {
         <span class="text-sm font-medium text-(--ui-text-highlighted)">{{ title }}</span>
       </div>
       <MessageThread :messages="messages" :loading="loading" />
-      <ComposeBar @send="handleSend" />
+      <ComposeBar :draft-key="chatId" @send="handleSend" />
     </template>
   </NuxtLayout>
 </template>

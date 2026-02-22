@@ -465,7 +465,7 @@ onUnmounted(() => {
               @react="handleReact"
             />
 
-            <ComposeBar @send="handleSend" />
+            <ComposeBar :draft-key="activeChatId ?? `${activeTeamId}-${activeChannelId}`" @send="handleSend" />
           </div>
 
           <!-- Thread panel -->

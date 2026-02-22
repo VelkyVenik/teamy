@@ -107,6 +107,7 @@ onMounted(() => {
 
     <!-- Compose bar -->
     <ComposeBar
+      :draft-key="`thread-${message.id}`"
       placeholder="Reply..."
       :loading="sending"
       @send="handleSend"
