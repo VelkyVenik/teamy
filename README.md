@@ -1,8 +1,8 @@
 # Teamy
 
-A lightweight Microsoft Teams **chat client** built with Nuxt 4 and Tauri 2.
+A lightweight, AI-native Microsoft Teams **chat client** built with Nuxt 4 and Tauri 2.
 
-Teamy is a chat-only alternative to the official Microsoft Teams desktop app. It covers the 90% use case -- reading and sending messages -- with a fraction of the RAM (~80 MB vs 300-500 MB). Calls, meetings, calendar, files, and other non-chat features are delegated to the official Teams app via deep links. It connects directly to Microsoft Graph API via Azure Entra ID, with no server or proxy needed.
+Teamy is a chat-only alternative to the official Microsoft Teams desktop app. It covers the 90% use case -- reading and sending messages -- with a fraction of the RAM (~80 MB vs 300-500 MB), and AI built in from day one. Calls, meetings, calendar, files, and other non-chat features are delegated to the official Teams app via deep links. It connects directly to Microsoft Graph API via Azure Entra ID, with no server or proxy needed.
 
 ![Teamy screenshot](docs/teamy-screenshot.png)
 
