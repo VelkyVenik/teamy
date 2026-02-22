@@ -2,6 +2,20 @@
 import type { Chat, ChatMessage, ChannelMessage, PendingImage } from '~~/types/graph'
 import { getPresenceLabel } from '~/composables/usePresence'
 
+const MAX_CHANNEL_CACHE_SIZE = 20
+const channelCache = new Map<string, ChannelMessage[]>()
+
+function channelCacheKey(teamId: string, channelId: string) {
+  return `${teamId}-${channelId}`
+}
+
+function evictOldestChannel() {
+  if (channelCache.size > MAX_CHANNEL_CACHE_SIZE) {
+    const oldest = channelCache.keys().next().value
+    if (oldest) channelCache.delete(oldest)
+  }
+}
+
 const router = useRouter()
 
 const { chats, loading: chatsLoading, error: chatsError, fetchChats, refreshChats } = useChats()
@@ -84,6 +98,10 @@ function selectChat(chat: Chat) {
   activeChatId.value = chat.id
   threadMessage.value = null
   markChatRead(chat.id)
+  // Optimistically update so cached messages don't re-show as unread
+  if (chat.viewpoint) {
+    chat.viewpoint.lastMessageReadDateTime = new Date().toISOString()
+  }
 }
 
 async function selectChannel(teamId: string, channelId: string) {
@@ -91,9 +109,31 @@ async function selectChannel(teamId: string, channelId: string) {
   activeTeamId.value = teamId
   activeChannelId.value = channelId
   threadMessage.value = null
-  channelMessagesLoading.value = true
-  channelMessages.value = await fetchChannelMessages(teamId, channelId)
-  channelMessagesLoading.value = false
+
+  const key = channelCacheKey(teamId, channelId)
+  const cached = channelCache.get(key)
+
+  if (cached) {
+    // Show cached immediately, refresh in background
+    channelMessages.value = cached
+    fetchChannelMessages(teamId, channelId).then((fresh) => {
+      channelCache.delete(key)
+      channelCache.set(key, fresh)
+      evictOldestChannel()
+      // Only update if still viewing this channel
+      if (activeTeamId.value === teamId && activeChannelId.value === channelId) {
+        channelMessages.value = fresh
+      }
+    })
+  }
+  else {
+    channelMessagesLoading.value = true
+    const fresh = await fetchChannelMessages(teamId, channelId)
+    channelCache.set(key, fresh)
+    evictOldestChannel()
+    channelMessages.value = fresh
+    channelMessagesLoading.value = false
+  }
 }
 
 async function handleSend(content: string, images: PendingImage[] = []) {
@@ -102,7 +142,12 @@ async function handleSend(content: string, images: PendingImage[] = []) {
   }
   else if (currentView.value === 'channel' && activeTeamId.value && activeChannelId.value) {
     await sendChannelMessage(activeTeamId.value, activeChannelId.value, content, 'text', images)
-    channelMessages.value = await fetchChannelMessages(activeTeamId.value, activeChannelId.value)
+    const fresh = await fetchChannelMessages(activeTeamId.value, activeChannelId.value)
+    const key = channelCacheKey(activeTeamId.value, activeChannelId.value)
+    channelCache.delete(key)
+    channelCache.set(key, fresh)
+    evictOldestChannel()
+    channelMessages.value = fresh
   }
 }
 

@@ -1,33 +1,65 @@
 import type { ChatMessage, PaginatedResponse, PendingImage, UseMessagesReturn } from '~/types/graph'
 
 const POLL_INTERVAL_MS = 5000
+const MAX_CACHE_SIZE = 20
+
+interface CachedChat {
+  messages: ChatMessage[]
+  nextLink: string | null
+}
+
+// Module-level cache shared across all instances — reactive so computed properties track changes
+const messageCache = reactive(new Map<string, CachedChat>())
+
+function evictOldest() {
+  if (messageCache.size > MAX_CACHE_SIZE) {
+    // Map iterates in insertion order — first key is the oldest
+    const oldest = messageCache.keys().next().value
+    if (oldest) messageCache.delete(oldest)
+  }
+}
 
 export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
   const { graphFetch, graphFetchPage } = useGraph()
 
-  const messages = ref<ChatMessage[]>([])
+  const messages = computed<ChatMessage[]>(() => {
+    if (!chatId.value) return []
+    return messageCache.get(chatId.value)?.messages ?? []
+  })
   const loading = ref(false)
   const loadingMore = ref(false)
   const error = ref<string | null>(null)
-  const hasMore = ref(false)
-  const nextLink = ref<string | null>(null)
+  const hasMore = computed(() => {
+    if (!chatId.value) return false
+    return !!(messageCache.get(chatId.value)?.nextLink)
+  })
   let pollTimer: ReturnType<typeof setInterval> | null = null
 
   async function fetchMessages() {
     if (!chatId.value) return
+    const id = chatId.value
 
-    loading.value = true
+    const cached = messageCache.get(id)
+    // Only show loading spinner on cache miss
+    if (!cached) {
+      loading.value = true
+    }
+
     error.value = null
     try {
-      const page = await graphFetchPage<ChatMessage>(`/me/chats/${chatId.value}/messages`, {
+      const page = await graphFetchPage<ChatMessage>(`/me/chats/${id}/messages`, {
         params: {
           $top: '50',
           $orderby: 'createdDateTime desc',
         },
       })
-      messages.value = page.value.reverse()
-      nextLink.value = page['@odata.nextLink'] ?? null
-      hasMore.value = !!nextLink.value
+      // Re-insert to refresh LRU order (delete + set moves to end)
+      messageCache.delete(id)
+      messageCache.set(id, {
+        messages: page.value.reverse(),
+        nextLink: page['@odata.nextLink'] ?? null,
+      })
+      evictOldest()
     }
     catch (err: any) {
       console.error('[useMessages] fetchMessages failed:', err)
@@ -39,15 +71,17 @@ export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
   }
 
   async function loadMore() {
-    if (!nextLink.value || loadingMore.value) return
+    if (!chatId.value) return
+    const id = chatId.value
+    const cached = messageCache.get(id)
+    if (!cached?.nextLink || loadingMore.value) return
 
     loadingMore.value = true
     try {
-      const page = await graphFetchPage<ChatMessage>(nextLink.value)
+      const page = await graphFetchPage<ChatMessage>(cached.nextLink)
       // Prepend older messages
-      messages.value = [...page.value.reverse(), ...messages.value]
-      nextLink.value = page['@odata.nextLink'] ?? null
-      hasMore.value = !!nextLink.value
+      cached.messages = [...page.value.reverse(), ...cached.messages]
+      cached.nextLink = page['@odata.nextLink'] ?? null
     }
     catch (err: any) {
       console.error('[useMessages] loadMore failed:', err)
@@ -73,17 +107,21 @@ export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
 
   async function pollForNew() {
     if (!chatId.value) return
+    const id = chatId.value
 
     try {
-      const page = await graphFetchPage<ChatMessage>(`/me/chats/${chatId.value}/messages`, {
+      const page = await graphFetchPage<ChatMessage>(`/me/chats/${id}/messages`, {
         params: { $top: '10', $orderby: 'createdDateTime desc' },
       })
 
-      const existing = new Set(messages.value.map(m => m.id))
+      const cached = messageCache.get(id)
+      if (!cached) return
+
+      const existing = new Set(cached.messages.map(m => m.id))
       const newMessages = page.value.filter(m => !existing.has(m.id))
 
       if (newMessages.length > 0) {
-        messages.value = [...messages.value, ...newMessages.reverse()]
+        cached.messages = [...cached.messages, ...newMessages.reverse()]
       }
     }
     catch {
@@ -110,7 +148,6 @@ export function useMessages(chatId: Ref<string | null>): UseMessagesReturn {
       startPolling()
     }
     else {
-      messages.value = []
       stopPolling()
     }
   })

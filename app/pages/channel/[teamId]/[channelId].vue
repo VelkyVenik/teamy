@@ -1,6 +1,20 @@
 <script setup lang="ts">
 import type { ChannelMessage, PendingImage } from '~~/types/graph'
 
+const MAX_CHANNEL_CACHE_SIZE = 20
+const channelPageCache = new Map<string, ChannelMessage[]>()
+
+function cacheKey(teamId: string, channelId: string) {
+  return `${teamId}-${channelId}`
+}
+
+function evictOldest() {
+  if (channelPageCache.size > MAX_CHANNEL_CACHE_SIZE) {
+    const oldest = channelPageCache.keys().next().value
+    if (oldest) channelPageCache.delete(oldest)
+  }
+}
+
 const route = useRoute()
 const router = useRouter()
 
@@ -28,14 +42,40 @@ const title = computed(() => {
 })
 
 async function loadMessages() {
-  loading.value = true
-  channelMessages.value = await fetchChannelMessages(teamId.value, channelId.value)
-  loading.value = false
+  const key = cacheKey(teamId.value, channelId.value)
+  const cached = channelPageCache.get(key)
+
+  if (cached) {
+    channelMessages.value = cached
+    // Refresh in background
+    fetchChannelMessages(teamId.value, channelId.value).then((fresh) => {
+      channelPageCache.delete(key)
+      channelPageCache.set(key, fresh)
+      evictOldest()
+      // Only update if still viewing this channel
+      if (cacheKey(teamId.value, channelId.value) === key) {
+        channelMessages.value = fresh
+      }
+    })
+  }
+  else {
+    loading.value = true
+    const fresh = await fetchChannelMessages(teamId.value, channelId.value)
+    channelPageCache.set(key, fresh)
+    evictOldest()
+    channelMessages.value = fresh
+    loading.value = false
+  }
 }
 
 async function handleSend(content: string, images: PendingImage[] = []) {
   await sendChannelMessage(teamId.value, channelId.value, content, 'text', images)
-  channelMessages.value = await fetchChannelMessages(teamId.value, channelId.value)
+  const fresh = await fetchChannelMessages(teamId.value, channelId.value)
+  const key = cacheKey(teamId.value, channelId.value)
+  channelPageCache.delete(key)
+  channelPageCache.set(key, fresh)
+  evictOldest()
+  channelMessages.value = fresh
 }
 
 watch([teamId, channelId], () => {
