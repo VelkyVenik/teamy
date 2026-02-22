@@ -1,6 +1,10 @@
 # Teamy
 
-A lightweight, native Microsoft Teams client built with Nuxt 4 and Tauri 2. Connects directly to Microsoft Graph API via Azure Entra ID for chats, channels, and presence.
+A lightweight, AI-native Microsoft Teams client built with Nuxt 4 and Tauri 2.
+
+The official Teams app is a resource hog — it consumes gigabytes of RAM, takes ages to start, and buries useful features under layers of UI. Teamy is the opposite: a small native binary (~15 MB) with minimal memory footprint, a clean and simple interface focused on what matters (chats, channels, messages), and AI built in from day one — not bolted on as an afterthought. It connects directly to Microsoft Graph API via Azure Entra ID, with no server or proxy needed.
+
+![Teamy screenshot](docs/teamy-screenshot.png)
 
 ## Prerequisites
 
@@ -82,6 +86,41 @@ types/            # TypeScript type definitions
 src-tauri/        # Tauri desktop shell (Rust)
   src/commands/   # Tauri commands (auth, claude, keychain, deeplink, notifications)
 ```
+
+## Roadmap
+
+### Milestone 1: Core Teams Client (current)
+
+- Azure Entra ID authentication (MSAL browser + Tauri-native OAuth2 PKCE)
+- Chat list with unread counts and last message preview
+- Real-time chat messaging with rich text, inline images, and replies
+- Channel browsing across joined and associated teams
+- Channel messaging with reply threads
+- User presence and status indicators
+- People search
+- Customizable sidebar sections (favorites, groups)
+- Dark/light theme with Nuxt UI v4
+- Desktop notifications (Tauri)
+- Deep link handling for Teams URLs
+- Basic Claude AI assistant with streaming chat (Tauri only, Keychain-stored API key)
+
+### Milestone 2: Claude Agent SDK Integration
+
+- Replace direct Anthropic API calls with Claude Agent SDK
+- AI-powered chat summarization (unread messages, long threads)
+- Smart reply drafting based on conversation context
+- Message translation
+- Intelligent search across chats and channels
+- Meeting notes extraction from chat history
+- Action item detection and tracking
+
+### Milestone 3: Self-Evolving App via Claude Agent SDK Skills
+
+- Plugin system powered by Claude Agent SDK skills
+- Users describe desired functionality in natural language, Claude generates and installs plugins
+- Auto-generated sidebar panels, message actions, and slash commands
+- Claude can modify and improve its own plugins based on user feedback
+- Self-improving workflows that adapt to user patterns over time
 
 ## Known Limitations
 
