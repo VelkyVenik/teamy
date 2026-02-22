@@ -117,6 +117,20 @@ function handleKeydown(e: KeyboardEvent) {
 
 const hasContent = computed(() => content.value.trim().length > 0 || pendingImages.value.length > 0)
 
+function focus() {
+  textareaRef.value?.textareaRef?.focus()
+}
+
+watch(() => props.draftKey, () => {
+  nextTick(() => focus())
+})
+
+onMounted(() => {
+  nextTick(() => focus())
+})
+
+defineExpose({ focus })
+
 onUnmounted(() => {
   for (const img of pendingImages.value) {
     URL.revokeObjectURL(img.previewUrl)
