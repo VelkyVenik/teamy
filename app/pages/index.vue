@@ -22,11 +22,12 @@ const { chats, loading: chatsLoading, error: chatsError, fetchChats, refreshChat
 const { getChatDisplayName } = useChatHelpers()
 const { teams, channels, loading: channelsLoading, error: channelsError, fetchTeams, fetchAssociatedTeams, fetchChannels, fetchChannelMessages, sendChannelMessage } = useChannels()
 const { startPolling: startPresencePolling, stopPolling: stopPresencePolling, fetchPresence, getPresence } = usePresence()
-const { load: loadSections } = useSections()
+const { load: loadSections, watchedChannelItems } = useSections()
 const { results: peopleResults, loading: peopleLoading, searchPeople } = useSearch()
 const { createOneOnOneChat } = useCreateChat()
 const { currentUserId } = useCurrentUser()
-const { updateFromChats, totalUnread, markChatRead, touchReadTimestamp, getSnapshotLastRead } = useUnread()
+const { updateFromChats, totalUnread, markChatRead, markChannelRead, touchReadTimestamp, getSnapshotLastRead, load: loadUnreadStore, flush } = useUnreadStore()
+const { startPolling, stopPolling, setWatchedChannels } = useUnreadPoller()
 const { setTrayUnreadCount } = useTauri()
 const { graphFetch } = useGraph()
 
@@ -106,6 +107,10 @@ async function selectChannel(teamId: string, channelId: string) {
   activeTeamId.value = teamId
   activeChannelId.value = channelId
   threadMessage.value = null
+
+  const unreadKey = `${teamId}:${channelId}`
+  threadLastRead.value = getSnapshotLastRead(unreadKey)
+  markChannelRead(teamId, channelId)
 
   const key = channelCacheKey(teamId, channelId)
   const cached = channelCache.get(key)
@@ -409,7 +414,7 @@ let dividerTimer: ReturnType<typeof setTimeout> | undefined
 watch(messages, (msgs) => {
   if (msgs.length && activeChatId.value) {
     const last = msgs[msgs.length - 1]
-    touchReadTimestamp(activeChatId.value, last.createdDateTime)
+    touchReadTimestamp('chat', activeChatId.value, undefined, last.createdDateTime)
     // Once messages are visible, start a one-time timer to clear the divider
     if (threadLastRead.value && !dividerTimer) {
       dividerTimer = setTimeout(() => {
@@ -421,11 +426,11 @@ watch(messages, (msgs) => {
 })
 
 // React to chat list refreshes
-watch(chats, c => updateFromChats(c))
-
-let refreshTimer: ReturnType<typeof setInterval> | undefined
+watch(chats, c => updateFromChats(c, currentUserId.value))
 
 onMounted(async () => {
+  await loadUnreadStore()
+
   await Promise.allSettled([
     fetchChats(),
     fetchTeams(),
@@ -442,19 +447,21 @@ onMounted(async () => {
     )
   }
 
-  updateFromChats(chats.value)
+  updateFromChats(chats.value, currentUserId.value)
   startPresenceForChats()
 
-  // Periodic refresh for unread detection
-  refreshTimer = setInterval(() => refreshChats(), 10_000)
+  // Start centralized polling for chats + channels
+  setWatchedChannels(watchedChannelItems.value)
+  startPolling()
 })
+
+// Keep poller in sync when watched channels change
+watch(watchedChannelItems, chs => setWatchedChannels(chs))
 
 onUnmounted(() => {
   stopPresencePolling()
-  if (refreshTimer) {
-    clearInterval(refreshTimer)
-    refreshTimer = undefined
-  }
+  stopPolling()
+  flush()
 })
 </script>
 

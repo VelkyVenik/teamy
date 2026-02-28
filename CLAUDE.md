@@ -17,7 +17,7 @@ Lightweight Microsoft Teams **chat-only** client built with Nuxt 4 + Tauri 2. Co
 - `app/pages/` -- File-based routing: `index.vue`, `chat/[chatId].vue`, `channel/[teamId]/[channelId].vue`
 - `app/utils/` -- Utility functions, auto-imported by Nuxt (`msalConfig.ts` for auth config)
 - `app/plugins/msal.client.ts` -- Client-side MSAL initialization plugin
-- `types/` -- Shared TypeScript types (`graph.ts` for Graph API types, `sections.ts` for sidebar sections)
+- `types/` -- Shared TypeScript types (`graph.ts` for Graph API types, `sections.ts` for sidebar sections, `unread.ts` for unread store)
 - `src-tauri/` -- Tauri desktop app (Rust)
 - `src-tauri/src/commands/` -- Tauri commands: `auth.rs` (OAuth window), `claude.rs` (streaming AI), `keychain.rs`, `deeplink.rs`, `notifications.rs`
 
@@ -57,7 +57,7 @@ Use the **Microsoft Learn MCP server** tools for Graph API documentation lookups
 - `microsoft_docs_fetch` — fetch full page content from a Microsoft Learn URL
 
 ### Composable state
-Most composables use **module-level refs** for shared state (not Pinia stores). This means all callers of e.g. `useUnread()` share the same reactive data. Pinia stores exist in `app/stores/` but the primary pattern is module-level composables.
+Most composables use **module-level refs** for shared state (not Pinia stores). This means all callers of e.g. `useUnreadStore()` share the same reactive data. Pinia stores exist in `app/stores/` but the primary pattern is module-level composables.
 
 ### Sidebar sections
 Users organize chats and channels into custom sections (favorites, custom groups). Managed by `useSections()`, persisted to localStorage (web) or Tauri plugin-store (desktop).
@@ -73,20 +73,53 @@ Claude integration runs entirely through Rust. The API key is stored in macOS Ke
 
 ## Unread Tracking
 
-- `useUnread()` manages sidebar unread state via `unreadChatIds` (module-level Set ref) and `localReadTimestamps` (reactive object)
-- `updateFromChats()` rebuilds unread set by comparing `lastMessagePreview.createdDateTime` against effective last-read timestamp
-- `touchReadTimestamp(chatId, messageTimestamp?)` uses `max(now, messageTimestamp)` to prevent clock-skew re-marking
-- Message thread "New messages" divider uses a local `threadLastRead` ref snapshot, decoupled from sidebar state. Auto-dismisses after 3 seconds.
-- Chat list refreshes every 10 seconds for unread detection (both `index.vue` and `chat/[chatId].vue`)
+Unified system for both chats and channels, managed by two composables:
+
+### `useUnreadStore()` — state & persistence
+- Module-level shared state: `readTimestamps` (per-item read position), `unreadCounts` (per-item message count), `lastKnownPreviewIds` (chat preview tracking), `channelLastMessageTimes`
+- Keys: chat ID for chats, `"teamId:channelId"` for channels
+- `updateFromChats(chats, currentUserId)` — rebuilds chat unread from chat list poll. Tracks `lastMessagePreview.id` changes for incremental counting (+1 per poll cycle where preview changed). Filters own messages via `from.user.id`.
+- `updateChannelUnread(teamId, channelId, latestMsgTime, fromUserId, currentUserId)` — channel unread from peek polling. Same incremental logic.
+- `touchReadTimestamp(type, id, teamId?, messageTimestamp?)` — optimistic local mark-as-read, uses `max(now, messageTimestamp)` to prevent clock-skew
+- `markChatRead(chatId)` — optimistic + fire-and-forget `markChatReadForUser` Graph API call
+- `markChannelRead(teamId, channelId)` — local only (Graph API has no channel read-state endpoint)
+- `getSnapshotLastRead(key, serverTimestamp?)` — max of local + server timestamp, used for "New messages" divider
+- `setExactCount(type, id, count, teamId?)` — called when user opens a chat/channel and exact count is computed from loaded messages
+- `getSectionUnreadItemCount(items)` — count of section items with unread > 0
+- Persisted to `LazyStore('unread-state.json')` (Tauri) or `localStorage('teamy-unread-state')` (web), debounced 2s
+
+### `useUnreadPoller()` — centralized polling
+- Replaces scattered `setInterval` calls in pages
+- Chat list poll: every 15s via `refreshChats()` + `updateFromChats()`
+- Channel peek poll: every 20s, staggered 500ms between requests, max 15 watched channels
+- `setWatchedChannels()` — updated from `useSections().watchedChannelItems` (channels in Favorites + custom groups)
+- Only channels explicitly placed in sidebar sections are polled; "Other chats" channels are fetched on-demand only
+
+### Message thread divider
+- "New messages" divider uses a local `threadLastRead` ref snapshot, decoupled from sidebar state
+- Captured once on chat/channel open via `getSnapshotLastRead()` / `getLastRead()`
+- Auto-dismisses after 3 seconds
+- Exact unread count computed from loaded messages on channel open
+
+### Polling budget (~150 req/10s Graph API rate limit)
+| Item | Interval | Requests/10s |
+|------|----------|-------------|
+| Chat list refresh | 15s | ~0.67 |
+| Active chat/channel messages | 5s (existing) | ~2 |
+| Watched channels (up to 15) | 20s, staggered | ~7.5 |
+| Presence | 30s (existing) | ~1 |
+| **Total** | | **~11** |
 
 ## Known Limitations
 
 - **Chat-only client** -- Calls, meetings, calendar, files, apps, Copilot, Viva, and Loop are not supported. Deep links open them in the official Teams app.
-- **Channel unread messages** -- Graph API does not provide unread counts or read state for channel messages. This is a Microsoft Graph API limitation with no known workaround.
+- **Channel unread state is local-only** -- Graph API does not provide `viewpoint` or `lastMessageReadDateTime` for channel messages. Channel read positions are tracked locally and persisted per device. They do not sync with the official Teams client or across devices.
+- **Chat unread counts are approximate** -- Sidebar counts use incremental tracking (one preview ID change per poll = +1). Burst messages between polls are undercounted. Exact counts are shown in the "New messages" divider when a chat is opened.
+- **Only sectioned channels are polled** -- Channels must be in Favorites or a custom section to receive background unread polling. Channels in "Other chats" are only checked when opened. Max 15 watched channels.
 - **Incoming call notifications** -- Graph API does not support real-time call notifications for client apps. Push notifications for calls require server-side change notification subscriptions which are not available for calling events in delegated (user) context.
 - **Calling / joining meetings** -- Not natively supported. The app uses deep links to open calls and meetings in the official Microsoft Teams web/desktop app.
 - **Sidebar sections** -- Sections (favorites, custom groups) are stored locally per device. They are not synced with Microsoft Teams or across devices.
-- **Real-time updates** -- Polling-based (5s active chat messages, 10s chat list). No WebSocket or push notifications.
+- **Real-time updates** -- Polling-based (5s active chat/channel messages, 15s chat list, 20s watched channels). No WebSocket or push notifications.
 
 ## Commands
 

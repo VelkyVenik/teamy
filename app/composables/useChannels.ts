@@ -91,6 +91,20 @@ export function useChannels(): UseChannelsReturn {
     })
   }
 
+  /** Lightweight peek: fetch only the latest message to check for new activity. */
+  async function peekChannelLatestMessage(teamId: string, channelId: string): Promise<{
+    createdDateTime: string
+    fromUserId: string | null
+  } | null> {
+    const page = await graphFetchPage<ChannelMessage>(
+      `/teams/${teamId}/channels/${channelId}/messages`,
+      { params: { $top: '1', $orderby: 'createdDateTime desc' } },
+    )
+    const msg = page.value[0]
+    if (!msg || msg.messageType !== 'message') return null
+    return { createdDateTime: msg.createdDateTime, fromUserId: msg.from?.user?.id ?? null }
+  }
+
   return {
     teams,
     channels,
@@ -101,5 +115,6 @@ export function useChannels(): UseChannelsReturn {
     fetchChannels,
     fetchChannelMessages,
     sendChannelMessage,
+    peekChannelLatestMessage,
   }
 }

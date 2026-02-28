@@ -36,8 +36,7 @@ export function useChatHelpers() {
   }
 
   function getUnreadCount(chatId: string): number {
-    const { isUnread } = useUnread()
-    return isUnread(chatId) ? 1 : 0
+    return useUnreadStore().getUnreadCount('chat', chatId)
   }
 
   return {

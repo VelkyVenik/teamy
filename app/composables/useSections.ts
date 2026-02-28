@@ -184,11 +184,26 @@ export function useSections() {
     return ids
   }
 
+  /** Channels explicitly placed in sidebar sections (Favorites + custom groups). */
+  const watchedChannelItems = computed(() => {
+    const result: Array<{ teamId: string; channelId: string }> = []
+    for (const section of sections.value) {
+      if (section.id === 'other') continue
+      for (const item of section.items) {
+        if (item.type === 'channel' && item.teamId) {
+          result.push({ teamId: item.teamId, channelId: item.id })
+        }
+      }
+    }
+    return result
+  })
+
   return {
     sections,
     hiddenItemKeys,
     loaded,
     sortedSections,
+    watchedChannelItems,
     load,
     createSection,
     renameSection,

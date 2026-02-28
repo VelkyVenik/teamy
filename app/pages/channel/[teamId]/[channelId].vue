@@ -23,9 +23,15 @@ const channelId = computed(() => route.params.channelId as string)
 
 const { chats, fetchChats } = useChats()
 const { teams, channels, fetchTeams, fetchAssociatedTeams, fetchChannels, fetchChannelMessages, sendChannelMessage } = useChannels()
+const { getLastRead, markChannelRead, touchReadTimestamp, setExactCount } = useUnreadStore()
+const { currentUserId } = useCurrentUser()
 
 const channelMessages = ref<ChannelMessage[]>([])
 const loading = ref(false)
+
+// Local snapshot of the read position — captured once on channel open,
+// decoupled from the sidebar's reactive chain.
+const threadLastRead = ref<string | null>(null)
 
 const currentChannel = computed(() => {
   const teamChannels = channels.value.get(teamId.value) ?? []
@@ -41,12 +47,26 @@ const title = computed(() => {
   return ''
 })
 
+function computeAndSetUnreadCount() {
+  if (threadLastRead.value) {
+    const unreadCount = channelMessages.value.filter(m =>
+      m.createdDateTime > threadLastRead.value! && m.from?.user?.id !== currentUserId.value,
+    ).length
+    setExactCount('channel', channelId.value, unreadCount, teamId.value)
+  }
+}
+
 async function loadMessages() {
+  // Capture last-read before marking channel read
+  threadLastRead.value = getLastRead('channel', channelId.value, teamId.value)
+  markChannelRead(teamId.value, channelId.value)
+
   const key = cacheKey(teamId.value, channelId.value)
   const cached = channelPageCache.get(key)
 
   if (cached) {
     channelMessages.value = cached
+    computeAndSetUnreadCount()
     // Refresh in background
     fetchChannelMessages(teamId.value, channelId.value).then((fresh) => {
       channelPageCache.delete(key)
@@ -55,6 +75,7 @@ async function loadMessages() {
       // Only update if still viewing this channel
       if (cacheKey(teamId.value, channelId.value) === key) {
         channelMessages.value = fresh
+        computeAndSetUnreadCount()
       }
     })
   }
@@ -64,6 +85,7 @@ async function loadMessages() {
     channelPageCache.set(key, fresh)
     evictOldest()
     channelMessages.value = fresh
+    computeAndSetUnreadCount()
     loading.value = false
   }
 }
@@ -76,10 +98,26 @@ async function handleSend(content: string, images: PendingImage[] = []) {
   channelPageCache.set(key, fresh)
   evictOldest()
   channelMessages.value = fresh
+  // User sent a message — they're caught up, clear the divider
+  threadLastRead.value = new Date().toISOString()
 }
 
 watch([teamId, channelId], () => {
+  clearTimeout(dividerTimer)
+  dividerTimer = undefined
   loadMessages()
+})
+
+// Auto-dismiss the "New messages" divider after a short delay
+let dividerTimer: ReturnType<typeof setTimeout> | undefined
+
+watch(channelMessages, (msgs) => {
+  if (msgs.length && threadLastRead.value && !dividerTimer) {
+    dividerTimer = setTimeout(() => {
+      threadLastRead.value = new Date().toISOString()
+      dividerTimer = undefined
+    }, 3000)
+  }
 })
 
 function selectChat(chat: any) {
@@ -124,7 +162,7 @@ onMounted(async () => {
           {{ currentChannel.description }}
         </div>
       </div>
-      <MessageThread :messages="channelMessages" :loading="loading" />
+      <MessageThread :messages="channelMessages" :loading="loading" :is-channel="true" :last-read-date-time="threadLastRead" />
       <ComposeBar :draft-key="`${teamId}-${channelId}`" @send="handleSend" />
     </template>
   </NuxtLayout>

@@ -289,6 +289,7 @@ export interface UseChannelsReturn {
   fetchChannels: (teamId: string) => Promise<void>
   fetchChannelMessages: (teamId: string, channelId: string) => Promise<ChannelMessage[]>
   sendChannelMessage: (teamId: string, channelId: string, content: string, contentType?: 'text' | 'html', images?: PendingImage[]) => Promise<void>
+  peekChannelLatestMessage: (teamId: string, channelId: string) => Promise<{ createdDateTime: string; fromUserId: string | null } | null>
 }
 
 export interface UsePresenceReturn {

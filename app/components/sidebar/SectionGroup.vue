@@ -24,6 +24,7 @@ const emit = defineEmits<{
 
 const { currentUserId, getChatDisplayName, getUnreadCount } = useChatHelpers()
 const { getPresence } = usePresence()
+const { isUnread: storeIsUnread, getSectionUnreadItemCount } = useUnreadStore()
 
 const isOpen = ref(true)
 
@@ -89,6 +90,12 @@ const sectionHeaderItems = computed(() => {
     ],
   ]
 })
+
+function channelIsUnread(item: SectionItem): boolean {
+  return item.type === 'channel' && !!item.teamId && storeIsUnread('channel', item.id, item.teamId)
+}
+
+const sectionUnreadCount = computed(() => getSectionUnreadItemCount(props.section.items))
 </script>
 
 <template>
@@ -104,7 +111,8 @@ const sectionHeaderItems = computed(() => {
           class="size-3 flex-shrink-0"
         />
         {{ section.label }}
-        <span class="text-slate-500 font-normal normal-case ml-1">{{ itemCount }}</span>
+        <span v-if="sectionUnreadCount > 0" class="text-slate-200 font-normal normal-case ml-1">&middot;{{ sectionUnreadCount }}</span>
+        <span v-else class="text-slate-500 font-normal normal-case ml-1">{{ itemCount }}</span>
       </button>
     </UContextMenu>
     <button
@@ -117,7 +125,8 @@ const sectionHeaderItems = computed(() => {
         class="size-3 flex-shrink-0"
       />
       {{ section.label }}
-      <span class="text-slate-500 font-normal normal-case ml-1">{{ itemCount }}</span>
+      <span v-if="sectionUnreadCount > 0" class="text-slate-200 font-normal normal-case ml-1">&middot;{{ sectionUnreadCount }}</span>
+      <span v-else class="text-slate-500 font-normal normal-case ml-1">{{ itemCount }}</span>
     </button>
 
     <!-- Items -->
@@ -190,12 +199,23 @@ const sectionHeaderItems = computed(() => {
             @click="emit('selectChannel', resolved.sectionItem.teamId!, resolved.channel!.id)"
           >
             <UIcon name="i-lucide-hash" class="size-3.5 flex-shrink-0 opacity-70" />
-            <span class="text-sm truncate flex-1 min-w-0">
+            <span
+              class="text-sm truncate flex-1 min-w-0"
+              :class="channelIsUnread(resolved.sectionItem)
+                ? 'font-bold text-white'
+                : activeTeamId === resolved.sectionItem.teamId && activeChannelId === resolved.channel.id
+                  ? 'text-white'
+                  : 'text-slate-400 group-hover:text-slate-200'"
+            >
               {{ resolved.channel.displayName }}
             </span>
             <span class="text-xs text-slate-500 truncate max-w-[40%] flex-shrink-0 ml-1">
               {{ resolved.team?.displayName }}
             </span>
+            <span
+              v-if="channelIsUnread(resolved.sectionItem)"
+              class="flex-shrink-0 size-2 rounded-full bg-indigo-500"
+            />
           </button>
         </UContextMenu>
       </template>

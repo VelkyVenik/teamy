@@ -7,10 +7,10 @@ const router = useRouter()
 const chatId = computed(() => route.params.chatId as string)
 const activeChatId = ref<string | null>(chatId.value)
 
-const { markChatRead, touchReadTimestamp, getSnapshotLastRead } = useUnread()
+const { markChatRead, touchReadTimestamp, getSnapshotLastRead, updateFromChats, load: loadUnreadStore, flush } = useUnreadStore()
+const { currentUserId } = useCurrentUser()
 
 const { chats, fetchChats, refreshChats } = useChats()
-const { updateFromChats } = useUnread()
 const { getChatDisplayName } = useChatHelpers()
 const { teams, channels, fetchTeams, fetchAssociatedTeams, fetchChannels } = useChannels()
 const { messages, loading, sendMessage } = useMessages(activeChatId)
@@ -41,20 +41,22 @@ watch(currentChat, (chat) => {
 })
 
 // Keep sidebar unread indicators current
-watch(chats, c => updateFromChats(c))
+watch(chats, c => updateFromChats(c, currentUserId.value))
 let refreshTimer: ReturnType<typeof setInterval> | undefined
 
 onMounted(async () => {
+  await loadUnreadStore()
   await Promise.allSettled([fetchChats(), fetchTeams()])
   await fetchAssociatedTeams()
   if (teams.value.length > 0) {
     await Promise.allSettled(teams.value.map(team => fetchChannels(team.id)))
   }
-  updateFromChats(chats.value)
+  updateFromChats(chats.value, currentUserId.value)
   refreshTimer = setInterval(() => refreshChats(), 10_000)
 })
 
 onUnmounted(() => {
+  flush()
   if (refreshTimer) {
     clearInterval(refreshTimer)
     refreshTimer = undefined
@@ -68,7 +70,7 @@ let dividerTimer: ReturnType<typeof setTimeout> | undefined
 watch(messages, (msgs) => {
   if (msgs.length) {
     const last = msgs[msgs.length - 1]
-    touchReadTimestamp(chatId.value, last.createdDateTime)
+    touchReadTimestamp('chat', chatId.value, undefined, last.createdDateTime)
     // Once messages are visible, start a one-time timer to clear the divider
     if (threadLastRead.value && !dividerTimer) {
       dividerTimer = setTimeout(() => {

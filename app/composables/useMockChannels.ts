@@ -131,14 +131,27 @@ export function useMockChannels(): UseChannelsReturn {
     mockChannelMessages[channelId].push(newMsg)
   }
 
+  async function fetchAssociatedTeams() {
+    // No-op in mock
+  }
+
+  async function peekChannelLatestMessage(_teamId: string, channelId: string) {
+    const msgs = mockChannelMessages[channelId]
+    if (!msgs?.length) return null
+    const last = msgs[msgs.length - 1]!
+    return { createdDateTime: last.createdDateTime, fromUserId: last.from?.user?.id ?? null }
+  }
+
   return {
     teams,
     channels,
     loading,
     error,
     fetchTeams,
+    fetchAssociatedTeams,
     fetchChannels,
     fetchChannelMessages,
     sendChannelMessage,
+    peekChannelLatestMessage,
   }
 }
