@@ -50,6 +50,12 @@ Detection: `window.__TAURI__` determines which flow to use.
 ### Graph API access
 All Graph API calls go through `useGraph()` composable which provides `graphFetch`, `graphFetchAll` (paginated), and `graphFetchPage`. The composable calls `graph.microsoft.com` directly from the client. Token acquisition is async (`await getToken()`) via `useGraphToken()` → `useAuth().getAccessToken()`. Retries on 429 (rate limit) and 401 (token refresh).
 
+### Graph API documentation (MS Learn MCP)
+Use the **Microsoft Learn MCP server** tools for Graph API documentation lookups instead of generic web search:
+- `microsoft_docs_search` — search Microsoft Learn for endpoints, permissions, concepts
+- `microsoft_code_sample_search` — find official Graph API code samples (use `language: "typescript"`)
+- `microsoft_docs_fetch` — fetch full page content from a Microsoft Learn URL
+
 ### Composable state
 Most composables use **module-level refs** for shared state (not Pinia stores). This means all callers of e.g. `useUnread()` share the same reactive data. Pinia stores exist in `app/stores/` but the primary pattern is module-level composables.
 
@@ -97,3 +103,24 @@ bun run tauri:build  # Production build (desktop)
 - Tailwind CSS with Nuxt UI component library
 - Dark theme: slate-900 sidebar, default Nuxt UI dark for main content
 - Primary color: indigo, neutral: slate
+
+## Custom Agents
+
+Project-specific agents in `.claude/agents/` for delegating specialized work:
+
+| Agent | File | Use When |
+|-------|------|----------|
+| **vue-dev** | `vue-dev.md` | Building components, pages, composables, layouts |
+| **rust-dev** | `rust-dev.md` | Tauri commands, native integrations (keychain, tray, notifications) |
+| **graph-api** | `graph-api.md` | New Graph API endpoints, types, pagination handling |
+| **test-writer** | `test-writer.md` | Setting up vitest, writing tests for composables/utils/components |
+| **ui-designer** | `ui-designer.md` | UI polish, Nuxt UI v4 components, layout design, theme tweaks |
+| **docs** | `docs.md` | Updating CLAUDE.md, README, inline documentation |
+
+### Agent Workflow
+- **Feature work**: Plan in main context, spawn `vue-dev` or `rust-dev` with spec
+- **Graph API additions**: Spawn `graph-api` with endpoint docs link
+- **Testing**: Spawn `test-writer` after feature completion
+- **UI polish**: Spawn `ui-designer` for component refinement
+- **Docs updates**: Spawn `docs` in background after significant changes
+- **Code review**: Use existing `feature-dev:code-reviewer` plugin agent
