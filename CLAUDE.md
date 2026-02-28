@@ -19,7 +19,8 @@ Lightweight Microsoft Teams **chat-only** client built with Nuxt 4 + Tauri 2. Co
 - `app/plugins/msal.client.ts` -- Client-side MSAL initialization plugin
 - `types/` -- Shared TypeScript types (`graph.ts` for Graph API types, `sections.ts` for sidebar sections, `unread.ts` for unread store)
 - `src-tauri/` -- Tauri desktop app (Rust)
-- `src-tauri/src/commands/` -- Tauri commands: `auth.rs` (OAuth window), `claude.rs` (streaming AI), `keychain.rs`, `deeplink.rs`, `notifications.rs`
+- `src-tauri/src/commands/` -- Tauri commands: `auth.rs` (OAuth window), `claude.rs` (streaming AI), `keychain.rs`, `deeplink.rs`, `notifications.rs`, `filesystem.rs` (sandboxed FS access for Claude)
+- `app/plugins/` -- Nuxt client plugins: `msal.client.ts` (auth), `plugins.client.ts` (plugin system init)
 
 ## Auth Architecture
 
@@ -137,23 +138,66 @@ bun run tauri:build  # Production build (desktop)
 - Dark theme: slate-900 sidebar, default Nuxt UI dark for main content
 - Primary color: indigo, neutral: slate
 
-## Custom Agents
+## Agent-First Development (MANDATORY)
 
-Project-specific agents in `.claude/agents/` for delegating specialized work:
+**CRITICAL: The main context MUST NOT write code directly.** All implementation work MUST be delegated to specialized agents. The main context is a coordinator — it plans, delegates, reviews, and communicates with the user. It does NOT edit files, write code, or make changes itself.
 
-| Agent | File | Use When |
-|-------|------|----------|
-| **vue-dev** | `vue-dev.md` | Building components, pages, composables, layouts |
-| **rust-dev** | `rust-dev.md` | Tauri commands, native integrations (keychain, tray, notifications) |
-| **graph-api** | `graph-api.md` | New Graph API endpoints, types, pagination handling |
-| **test-writer** | `test-writer.md` | Setting up vitest, writing tests for composables/utils/components |
-| **ui-designer** | `ui-designer.md` | UI polish, Nuxt UI v4 components, layout design, theme tweaks |
-| **docs** | `docs.md` | Updating CLAUDE.md, README, inline documentation |
+### Main Context Responsibilities (ONLY these)
+1. **Understand** the user's request
+2. **Plan** the approach (use `EnterPlanMode` for non-trivial tasks)
+3. **Research** if needed (read files, search code to understand context)
+4. **Delegate** implementation to the correct agent(s) with detailed specs
+5. **Review** agent output and report results to the user
+6. **Commit** when asked (git operations stay in main context)
 
-### Agent Workflow
-- **Feature work**: Plan in main context, spawn `vue-dev` or `rust-dev` with spec
-- **Graph API additions**: Spawn `graph-api` with endpoint docs link
-- **Testing**: Spawn `test-writer` after feature completion
-- **UI polish**: Spawn `ui-designer` for component refinement
-- **Docs updates**: Spawn `docs` in background after significant changes
-- **Code review**: Use existing `feature-dev:code-reviewer` plugin agent
+### What the Main Context MUST NOT Do
+- Edit or write any source files (`.vue`, `.ts`, `.rs`, `.css`, etc.)
+- Use the `Edit`, `Write`, or `NotebookEdit` tools for code changes
+- Implement features, fix bugs, or refactor code directly
+- Make "quick fixes" — even one-line changes go through agents
+
+### Available Agents
+
+| Agent | `subagent_type` | Use When |
+|-------|----------------|----------|
+| **vue-dev** | `general-purpose` | Components, pages, composables, layouts, any `.vue`/`.ts` frontend work |
+| **rust-dev** | `general-purpose` | Tauri commands, Rust backend, native integrations |
+| **graph-api** | `general-purpose` | Graph API endpoints, types, pagination, permissions |
+| **test-writer** | `general-purpose` | Vitest setup, writing tests for composables/utils/components |
+| **ui-designer** | `general-purpose` | UI polish, Nuxt UI v4 components, layout design, theme tweaks |
+| **docs** | `general-purpose` | CLAUDE.md, README, inline documentation updates |
+
+All project agents use `subagent_type: "general-purpose"`. Pass the agent name via the `name` parameter (e.g., `name: "vue-dev"`).
+
+### Delegation Workflow
+
+1. **Single-domain task** (e.g., "add a button to the sidebar"):
+   - Spawn `vue-dev` with the spec → wait for result → report to user
+
+2. **Cross-domain task** (e.g., "add a new Tauri command with frontend UI"):
+   - Spawn `rust-dev` for the backend work
+   - Spawn `vue-dev` for the frontend work (can run in parallel if independent, or sequentially if dependent)
+
+3. **Feature with tests**:
+   - Spawn implementation agent → then spawn `test-writer`
+
+4. **After significant changes**:
+   - Spawn `docs` in background to update documentation
+
+5. **Code review**:
+   - Use `feature-dev:code-reviewer` plugin agent
+
+### Agent Prompt Template
+
+When spawning an agent, provide a clear spec:
+```
+Task: [what to build/change]
+Files to modify: [list known files, or "find appropriate files"]
+Requirements:
+- [requirement 1]
+- [requirement 2]
+Context: [any relevant background the agent needs]
+```
+
+### Parallel Agents
+Launch multiple agents in a single message when their work is independent. Example: `rust-dev` for backend + `vue-dev` for frontend types can run simultaneously.

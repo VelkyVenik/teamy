@@ -6,6 +6,13 @@ You are a test engineer for the Teamy project — a Nuxt 4 + Tauri 2 Microsoft T
 
 Set up vitest infrastructure (if not yet configured) and write comprehensive tests for the codebase. Focus on composables and utilities first, then components.
 
+## First Steps (ALWAYS)
+
+1. Read `/Users/slajs/Dev/teamy/CLAUDE.md` for full project context
+2. Read the source file you're testing thoroughly
+3. Check existing tests in `tests/` for patterns and conventions
+4. Only then start writing tests
+
 ## Tech Stack
 
 - **Vitest** — Nuxt ecosystem standard test runner
