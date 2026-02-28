@@ -89,7 +89,7 @@ src-tauri/        # Tauri desktop shell (Rust)
 
 ## Roadmap
 
-### Milestone 1: Core Teams Client (current)
+### Milestone 1: Core Teams Client ✅
 
 - Azure Entra ID authentication (MSAL browser + Tauri-native OAuth2 PKCE)
 - Chat list with unread counts and last message preview
@@ -104,7 +104,15 @@ src-tauri/        # Tauri desktop shell (Rust)
 - Deep link handling for Teams URLs
 - Basic Claude AI assistant with streaming chat (Tauri only, Keychain-stored API key)
 
-### Milestone 2: Claude Agent SDK Integration
+### Milestone 2: Self-Evolving App via Claude Agent SDK Skills
+
+- Plugin system powered by Claude Agent SDK skills
+- Users describe desired functionality in natural language, Claude generates and installs plugins
+- Auto-generated sidebar panels, message actions, and slash commands
+- Claude can modify and improve its own plugins based on user feedback
+- Self-improving workflows that adapt to user patterns over time
+
+### Milestone 3: Claude Agent SDK Integration (current)
 
 - Replace direct Anthropic API calls with Claude Agent SDK
 - AI-powered chat summarization (unread messages, long threads)
@@ -113,14 +121,6 @@ src-tauri/        # Tauri desktop shell (Rust)
 - Intelligent search across chats and channels
 - Meeting notes extraction from chat history
 - Action item detection and tracking
-
-### Milestone 3: Self-Evolving App via Claude Agent SDK Skills
-
-- Plugin system powered by Claude Agent SDK skills
-- Users describe desired functionality in natural language, Claude generates and installs plugins
-- Auto-generated sidebar panels, message actions, and slash commands
-- Claude can modify and improve its own plugins based on user feedback
-- Self-improving workflows that adapt to user patterns over time
 
 ## Not Supported (by design)
 
@@ -133,7 +133,7 @@ Teamy is a chat-only client. The following are delegated to the official Teams a
 
 ## Known Limitations
 
-- **Channel unread messages** -- Microsoft Graph API does not expose unread counts or read state for channel messages. There is no workaround available.
+- **Channel unread messages** -- Microsoft Graph API does not expose read state for channel messages. Unread tracking is approximated locally (per-device, not synced with official Teams).
 - **Incoming call notifications** -- Graph API does not support real-time call event notifications for client apps (requires server-side subscriptions not available in delegated context).
 - **Calling / joining meetings** -- Uses deep links to open calls and meetings in the official Microsoft Teams web/desktop client. Native calling is not supported.
 - **Sidebar sections** -- Custom sections (favorites, groups) are stored locally per device and not synced with Microsoft Teams or across devices.
