@@ -267,6 +267,19 @@ function flush() {
   persist()
 }
 
+/** @internal — reset all module state for unit tests */
+export function _resetUnreadStoreForTesting() {
+  for (const key of Object.keys(readTimestamps)) delete readTimestamps[key]
+  for (const key of Object.keys(unreadCounts)) delete unreadCounts[key]
+  for (const key of Object.keys(lastKnownPreviewIds)) delete lastKnownPreviewIds[key]
+  for (const key of Object.keys(channelLastMessageTimes)) delete channelLastMessageTimes[key]
+  loaded.value = false
+  if (persistTimer) {
+    clearTimeout(persistTimer)
+    persistTimer = undefined
+  }
+}
+
 export function useUnreadStore() {
   const { graphFetch } = useGraph()
   const { currentUserId } = useCurrentUser()
