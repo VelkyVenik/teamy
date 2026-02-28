@@ -198,12 +198,27 @@ export function useSections() {
     return result
   })
 
+  /** Chat IDs explicitly placed in sidebar sections (Favorites + custom groups). */
+  const sectionChatIds = computed(() => {
+    const result: string[] = []
+    for (const section of sections.value) {
+      if (section.id === 'other') continue
+      for (const item of section.items) {
+        if (item.type === 'chat') {
+          result.push(item.id)
+        }
+      }
+    }
+    return result
+  })
+
   return {
     sections,
     hiddenItemKeys,
     loaded,
     sortedSections,
     watchedChannelItems,
+    sectionChatIds,
     load,
     createSection,
     renameSection,

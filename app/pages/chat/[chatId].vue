@@ -10,9 +10,10 @@ const activeChatId = ref<string | null>(chatId.value)
 const { markChatRead, touchReadTimestamp, getSnapshotLastRead, updateFromChats, load: loadUnreadStore, flush } = useUnreadStore()
 const { currentUserId } = useCurrentUser()
 
-const { chats, fetchChats, refreshChats } = useChats()
+const { chats, fetchChats, refreshChats, ensureSectionChatsLoaded } = useChats()
 const { getChatDisplayName } = useChatHelpers()
 const { teams, channels, fetchTeams, fetchAssociatedTeams, fetchChannels } = useChannels()
+const { sectionChatIds } = useSections()
 const { messages, loading, sendMessage } = useMessages(activeChatId)
 
 const currentChat = computed(() => chats.value.find(c => c.id === chatId.value))
@@ -47,6 +48,9 @@ let refreshTimer: ReturnType<typeof setInterval> | undefined
 onMounted(async () => {
   await loadUnreadStore()
   await Promise.allSettled([fetchChats(), fetchTeams()])
+  // Ensure the current chat + section chats are loaded even if outside top-50
+  const required = new Set([...sectionChatIds.value, chatId.value])
+  await ensureSectionChatsLoaded([...required])
   await fetchAssociatedTeams()
   if (teams.value.length > 0) {
     await Promise.allSettled(teams.value.map(team => fetchChannels(team.id)))

@@ -12,12 +12,28 @@ function filterVisibleChats(chats: Chat[]): Chat[] {
   return chats.filter(c => !c.viewpoint?.isHidden)
 }
 
+// Module-level set of chat IDs that were individually fetched for sections.
+// Kept across refreshes so they aren't lost when refreshChats replaces the list.
+const sectionChatIds = new Set<string>()
+const sectionChatsById = new Map<string, Chat>()
+
 export function useChats(): UseChatsReturn {
-  const { graphFetchPage } = useGraph()
+  const { graphFetch, graphFetchPage } = useGraph()
 
   const chats = ref<Chat[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
+
+  /** Merge individually-fetched section chats into the main list. */
+  function mergeWithSectionChats(pageChats: Chat[]): Chat[] {
+    if (sectionChatsById.size === 0) return pageChats
+    const pageIds = new Set(pageChats.map(c => c.id))
+    const extras: Chat[] = []
+    for (const [id, chat] of sectionChatsById) {
+      if (!pageIds.has(id)) extras.push(chat)
+    }
+    return [...pageChats, ...extras]
+  }
 
   async function fetchChats() {
     loading.value = true
@@ -32,7 +48,7 @@ export function useChats(): UseChatsReturn {
           $top: '50',
         },
       })
-      chats.value = sortChatsByLastMessage(filterVisibleChats(page.value))
+      chats.value = sortChatsByLastMessage(filterVisibleChats(mergeWithSectionChats(page.value)))
     }
     catch (err: any) {
       console.error('[useChats] fetchChats failed:', err)
@@ -51,11 +67,40 @@ export function useChats(): UseChatsReturn {
           $top: '50',
         },
       })
-      chats.value = sortChatsByLastMessage(filterVisibleChats(page.value))
+      chats.value = sortChatsByLastMessage(filterVisibleChats(mergeWithSectionChats(page.value)))
     }
     catch (err: any) {
       console.error('[useChats] refreshChats failed:', err)
       error.value = err?.error?.message ?? err?.message ?? 'Failed to refresh chats'
+    }
+  }
+
+  /**
+   * Fetch chats that are in sidebar sections but not in the latest page.
+   * Call after both fetchChats() and loadSections() have completed.
+   */
+  async function ensureSectionChatsLoaded(requiredChatIds: string[]) {
+    const loadedIds = new Set(chats.value.map(c => c.id))
+    const missing = requiredChatIds.filter(id => !loadedIds.has(id) && !sectionChatIds.has(id))
+    if (missing.length === 0) return
+
+    const fetched: Chat[] = []
+    await Promise.allSettled(missing.map(async (chatId) => {
+      try {
+        const chat = await graphFetch<Chat>(`/me/chats/${chatId}`, {
+          params: { $expand: 'lastMessagePreview,members' },
+        })
+        fetched.push(chat)
+        sectionChatIds.add(chatId)
+        sectionChatsById.set(chatId, chat)
+      }
+      catch (err) {
+        console.warn(`[useChats] Failed to fetch section chat ${chatId}:`, err)
+      }
+    }))
+
+    if (fetched.length > 0) {
+      chats.value = sortChatsByLastMessage([...chats.value, ...fetched])
     }
   }
 
@@ -65,5 +110,6 @@ export function useChats(): UseChatsReturn {
     error,
     fetchChats,
     refreshChats,
+    ensureSectionChatsLoaded,
   }
 }

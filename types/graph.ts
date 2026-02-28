@@ -264,6 +264,7 @@ export interface UseChatsReturn {
   error: Ref<string | null>
   fetchChats: () => Promise<void>
   refreshChats: () => Promise<void>
+  ensureSectionChatsLoaded: (requiredChatIds: string[]) => Promise<void>
 }
 
 export interface UseMessagesReturn {

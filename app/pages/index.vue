@@ -18,11 +18,11 @@ function evictOldestChannel() {
 
 const router = useRouter()
 
-const { chats, loading: chatsLoading, error: chatsError, fetchChats, refreshChats } = useChats()
+const { chats, loading: chatsLoading, error: chatsError, fetchChats, refreshChats, ensureSectionChatsLoaded } = useChats()
 const { getChatDisplayName } = useChatHelpers()
 const { teams, channels, loading: channelsLoading, error: channelsError, fetchTeams, fetchAssociatedTeams, fetchChannels, fetchChannelMessages, sendChannelMessage } = useChannels()
 const { startPolling: startPresencePolling, stopPolling: stopPresencePolling, fetchPresence, getPresence } = usePresence()
-const { load: loadSections, watchedChannelItems } = useSections()
+const { load: loadSections, watchedChannelItems, sectionChatIds } = useSections()
 const { results: peopleResults, loading: peopleLoading, searchPeople } = useSearch()
 const { createOneOnOneChat } = useCreateChat()
 const { currentUserId } = useCurrentUser()
@@ -436,6 +436,9 @@ onMounted(async () => {
     fetchTeams(),
     loadSections(),
   ])
+
+  // Fetch section chats that aren't in the top-50 page
+  await ensureSectionChatsLoaded(sectionChatIds.value)
 
   // Discover teams the user can access via shared channels
   await fetchAssociatedTeams()

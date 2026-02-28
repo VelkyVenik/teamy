@@ -161,6 +161,10 @@ export function useMockChats(): UseChatsReturn & {
     chats.value = [...mockChats]
   }
 
+  async function ensureSectionChatsLoaded(_requiredChatIds: string[]) {
+    // No-op in mock — all chats are always loaded
+  }
+
   function getUnreadCount(chatId: string): number {
     return mockUnreadCounts.get(chatId) ?? 0
   }
@@ -184,6 +188,7 @@ export function useMockChats(): UseChatsReturn & {
     error,
     fetchChats,
     refreshChats,
+    ensureSectionChatsLoaded,
     getUnreadCount,
     getChatDisplayName,
     getChatAvatar,
