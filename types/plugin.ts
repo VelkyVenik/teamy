@@ -47,14 +47,17 @@ export interface PluginContext {
   /** Register a context menu action on messages */
   registerMessageAction(label: string, handler: (msg: PluginMessage) => void): void
 
-  /** Register a slash command */
-  registerCommand(name: string, description: string, handler: (...args: string[]) => void): void
+  /** Register a slash command. Handler can return a string to display as feedback. */
+  registerCommand(name: string, description: string, handler: (...args: string[]) => string | void | Promise<string | void>): void
 
   /** Send a native macOS notification */
   sendNotification(title: string, body: string): Promise<void>
 
   /** Make an authenticated Graph API request */
   graphFetch<T = unknown>(path: string, options?: RequestInit): Promise<T>
+
+  /** Send a message to Claude AI and get a text response (non-streaming) */
+  claudeChat(messages: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string>
 
   /** Per-plugin key-value storage */
   storage: PluginStorage

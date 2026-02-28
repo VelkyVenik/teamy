@@ -26,7 +26,7 @@ const { currentUserId, getChatDisplayName, getUnreadCount } = useChatHelpers()
 const { getPresence } = usePresence()
 const { isUnread: storeIsUnread, getSectionUnreadItemCount } = useUnreadStore()
 
-const isOpen = ref(true)
+const isOpen = ref(props.section.id !== 'other')
 
 // Resolve section items against live Graph data
 const resolvedItems = computed(() => {

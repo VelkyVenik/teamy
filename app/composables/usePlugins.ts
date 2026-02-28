@@ -11,6 +11,8 @@ import type {
   TeamyPlugin,
 } from '~/types/plugin'
 
+const isTauri = typeof window !== 'undefined' && '__TAURI__' in window
+
 // --- Event Bus ---
 
 const eventHandlers = new Map<string, Map<PluginEvent, PluginEventHandler[]>>()
@@ -37,6 +39,72 @@ export function emitPluginEvent(event: PluginEvent, ...args: any[]) {
       }
     }
   }
+}
+
+// --- Handler Registries ---
+
+const commandHandlers = new Map<string, { pluginId: string; description: string; handler: (...args: string[]) => string | void | Promise<string | void> }>()
+const messageActionHandlers = new Map<string, { pluginId: string; label: string; handler: (msg: PluginMessage) => void }>()
+const sidebarPanels = new Map<string, { pluginId: string; component: Component }>()
+
+// Reactive trigger — increment whenever handler registries change so Vue computed properties re-evaluate
+const registryVersion = ref(0)
+
+export async function executeCommand(name: string, ...args: string[]): Promise<{ executed: boolean; result?: string }> {
+  const entry = commandHandlers.get(name)
+  if (!entry) return { executed: false }
+  try {
+    const result = await entry.handler(...args)
+    return { executed: true, result: typeof result === 'string' ? result : undefined }
+  }
+  catch (err) {
+    console.error(`[plugins] Command /${name} failed:`, err)
+    const message = err instanceof Error ? err.message : String(err)
+    return { executed: true, result: `Command /${name} failed: ${message}` }
+  }
+}
+
+export function getRegisteredCommands(): Array<{ name: string; description: string; pluginId: string }> {
+  // Read reactive trigger so Vue tracks this dependency
+  // eslint-disable-next-line no-unused-expressions
+  registryVersion.value
+  return Array.from(commandHandlers.entries()).map(([name, entry]) => ({
+    name,
+    description: entry.description,
+    pluginId: entry.pluginId,
+  }))
+}
+
+export function getMessageActions(): Array<{ label: string; pluginId: string; handler: (msg: PluginMessage) => void }> {
+  // Read reactive trigger so Vue tracks this dependency
+  // eslint-disable-next-line no-unused-expressions
+  registryVersion.value
+  return Array.from(messageActionHandlers.values())
+}
+
+export function getSidebarPanels(): Array<{ pluginId: string; component: Component }> {
+  // eslint-disable-next-line no-unused-expressions
+  registryVersion.value
+  return Array.from(sidebarPanels.values())
+}
+
+function cleanupPluginHandlers(pluginId: string) {
+  // Clean up commands
+  for (const [name, entry] of commandHandlers) {
+    if (entry.pluginId === pluginId) commandHandlers.delete(name)
+  }
+  // Clean up message actions
+  for (const [key, entry] of messageActionHandlers) {
+    if (entry.pluginId === pluginId) messageActionHandlers.delete(key)
+  }
+  // Clean up sidebar panels
+  for (const [key, entry] of sidebarPanels) {
+    if (entry.pluginId === pluginId) sidebarPanels.delete(key)
+  }
+  // Clean up event handlers
+  eventHandlers.delete(pluginId)
+  // Bump reactive trigger so computed properties re-evaluate
+  registryVersion.value++
 }
 
 // --- Plugin Storage Implementation ---
@@ -144,7 +212,9 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
   const { graphFetch: graphApiFetch } = useGraph()
 
   return {
-    registerSidebarPanel(_component: Component) {
+    registerSidebarPanel(component: Component) {
+      sidebarPanels.set(`${pluginId}:panel`, { pluginId, component })
+      registryVersion.value++
       pluginStore.setHasSidebarPanel(pluginId, true)
       pluginStore.addLog(pluginId, {
         timestamp: Date.now(),
@@ -154,6 +224,8 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
     },
 
     registerMessageAction(label: string, handler: (msg: PluginMessage) => void) {
+      messageActionHandlers.set(`${pluginId}:${label}`, { pluginId, label, handler })
+      registryVersion.value++
       pluginStore.addRegisteredMessageAction(pluginId, label)
       pluginStore.addLog(pluginId, {
         timestamp: Date.now(),
@@ -162,7 +234,9 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
       })
     },
 
-    registerCommand(name: string, description: string, handler: (...args: string[]) => void) {
+    registerCommand(name: string, description: string, handler: (...args: string[]) => string | void | Promise<string | void>) {
+      commandHandlers.set(name, { pluginId, description, handler })
+      registryVersion.value++
       pluginStore.addRegisteredCommand(pluginId, name, description)
       pluginStore.addLog(pluginId, {
         timestamp: Date.now(),
@@ -172,7 +246,6 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
     },
 
     async sendNotification(title: string, body: string) {
-      // Use browser Notification API as fallback (Tauri integration will replace this)
       if (import.meta.client && 'Notification' in window) {
         if (Notification.permission === 'granted') {
           new Notification(title, { body })
@@ -187,9 +260,18 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
     },
 
     async graphFetch<T = unknown>(path: string, options?: RequestInit): Promise<T> {
-      // Use the Graph API composable which handles auth token injection and retries
       return graphApiFetch<T>(path, {
         method: options?.method,
+      })
+    },
+
+    async claudeChat(messages: Array<{ role: 'user' | 'assistant'; content: string }>): Promise<string> {
+      if (!isTauri) {
+        throw new Error('Claude AI requires the desktop app')
+      }
+      const { invoke } = await import('@tauri-apps/api/core')
+      return invoke<string>('claude_chat_sync', {
+        request: { messages },
       })
     },
 
@@ -222,13 +304,133 @@ function createPluginContext(pluginId: string, schema?: Record<string, PluginSet
   }
 }
 
+// --- Plugin Code Evaluation ---
+
+/**
+ * Evaluate plugin code (JavaScript IIFE) and return a TeamyPlugin object.
+ * The code must return an object with: id, name, version, description, activate(ctx), deactivate()
+ *
+ * NOTE: Dynamic code evaluation is an intentional feature of the plugin system.
+ * Only code explicitly requested by the user via the Claude panel is evaluated.
+ */
+export function evaluatePluginCode(code: string): TeamyPlugin {
+  try {
+    // Dynamic evaluation of plugin IIFE — intentional for plugin system.
+    // Strip trailing semicolons/whitespace — Claude often generates `(function(){...})();`
+    // and wrapping as `return (code;)` would be a syntax error inside the parens.
+    const trimmed = code.replace(/;\s*$/, '').trim()
+    const evaluate = new Function('return (' + trimmed + ')') // eslint-disable-line no-new-func -- intentional plugin eval
+    const plugin = evaluate()
+
+    if (!plugin || typeof plugin !== 'object') {
+      throw new Error('Plugin code must return an object')
+    }
+    if (!plugin.id || typeof plugin.id !== 'string') {
+      throw new Error('Plugin must have a string "id"')
+    }
+    if (!plugin.name || typeof plugin.name !== 'string') {
+      throw new Error('Plugin must have a string "name"')
+    }
+    if (typeof plugin.activate !== 'function') {
+      throw new Error('Plugin must have an "activate" function')
+    }
+    if (typeof plugin.deactivate !== 'function') {
+      throw new Error('Plugin must have a "deactivate" function')
+    }
+
+    return plugin as TeamyPlugin
+  }
+  catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    throw new Error(`Plugin evaluation failed: ${message}`)
+  }
+}
+
+// --- Plugin Persistence ---
+
+const GENERATED_PLUGINS_STORAGE_KEY = 'teamy-generated-plugins'
+
+interface GeneratedPluginRecord {
+  id: string
+  code: string
+  manifest: {
+    id: string
+    name: string
+    version: string
+    description: string
+  }
+  installedAt: number
+}
+
+async function getPluginStore(): Promise<{
+  get: () => Promise<GeneratedPluginRecord[]>
+  set: (records: GeneratedPluginRecord[]) => Promise<void>
+}> {
+  if (isTauri) {
+    const { LazyStore } = await import('@tauri-apps/plugin-store')
+    const store = new LazyStore('generated-plugins.json')
+    return {
+      async get() {
+        return (await store.get<GeneratedPluginRecord[]>('plugins')) ?? []
+      },
+      async set(records: GeneratedPluginRecord[]) {
+        await store.set('plugins', records)
+        await store.save()
+      },
+    }
+  }
+  return {
+    async get() {
+      try {
+        const raw = localStorage.getItem(GENERATED_PLUGINS_STORAGE_KEY)
+        return raw ? JSON.parse(raw) : []
+      }
+      catch {
+        return []
+      }
+    },
+    async set(records: GeneratedPluginRecord[]) {
+      localStorage.setItem(GENERATED_PLUGINS_STORAGE_KEY, JSON.stringify(records))
+    },
+  }
+}
+
+async function persistPluginCode(id: string, code: string, manifest: { id: string; name: string; version: string; description: string }) {
+  const store = await getPluginStore()
+  const records = await store.get()
+  const existing = records.findIndex(r => r.id === id)
+  const record: GeneratedPluginRecord = { id, code, manifest, installedAt: Date.now() }
+  if (existing >= 0) {
+    records[existing] = record
+  }
+  else {
+    records.push(record)
+  }
+  await store.set(records)
+}
+
+async function removePersistedPlugin(id: string) {
+  const store = await getPluginStore()
+  const records = await store.get()
+  await store.set(records.filter(r => r.id !== id))
+  // Also clean up plugin-specific storage
+  if (import.meta.client) {
+    localStorage.removeItem(`teamy-plugin-${id}`)
+    localStorage.removeItem(`teamy-plugin-settings-${id}`)
+  }
+}
+
 // --- Plugin Loader ---
+
+let pluginsLoaded = false
 
 export function usePlugins() {
   const pluginStore = usePluginStore()
   const isLoading = ref(false)
 
   async function loadBundledPlugins() {
+    if (pluginsLoaded) return
+    pluginsLoaded = true
     isLoading.value = true
 
     try {
@@ -244,7 +446,6 @@ export function usePlugins() {
           const plugin = module.default
           if (!plugin?.id || !plugin?.name) continue
 
-          // Extract plugin directory name from path
           const dirMatch = path.match(/plugins\/([^/]+)\//)
           const dirName = dirMatch?.[1] || plugin.id
 
@@ -271,9 +472,52 @@ export function usePlugins() {
           console.error(`Failed to load plugin from ${path}:`, err)
         }
       }
+
+      // Load generated plugins from persistence
+      await loadGeneratedPlugins()
+
+      // Auto-activate all loaded plugins
+      for (const plugin of pluginStore.pluginList) {
+        if (!plugin.enabled && plugin.instance) {
+          await activatePlugin(plugin.manifest.id)
+        }
+      }
     }
     finally {
       isLoading.value = false
+    }
+  }
+
+  async function loadGeneratedPlugins() {
+    try {
+      const store = await getPluginStore()
+      const records = await store.get()
+
+      for (const record of records) {
+        try {
+          const plugin = evaluatePluginCode(record.code)
+          pluginStore.registerPlugin(record.manifest, `generated:${record.id}`)
+          pluginStore.setPluginInstance(record.id, plugin)
+
+          pluginStore.addLog(record.id, {
+            timestamp: Date.now(),
+            level: 'info',
+            message: `Loaded generated plugin: ${record.manifest.name}`,
+          })
+        }
+        catch (err) {
+          console.error(`[plugins] Failed to load generated plugin ${record.id}:`, err)
+          pluginStore.registerPlugin(record.manifest, `generated:${record.id}`)
+          pluginStore.addLog(record.id, {
+            timestamp: Date.now(),
+            level: 'error',
+            message: `Failed to load: ${err instanceof Error ? err.message : String(err)}`,
+          })
+        }
+      }
+    }
+    catch (err) {
+      console.error('[plugins] Failed to load generated plugins:', err)
     }
   }
 
@@ -310,8 +554,11 @@ export function usePlugins() {
       await plugin.instance.deactivate()
       pluginStore.disablePlugin(id)
 
-      // Clean up event handlers
-      eventHandlers.delete(id)
+      // Clean up all handler registries
+      cleanupPluginHandlers(id)
+
+      // Clear store-level registered items
+      pluginStore.clearRegistrations(id)
 
       pluginStore.addLog(id, {
         timestamp: Date.now(),
@@ -341,21 +588,120 @@ export function usePlugins() {
     }
   }
 
-  async function installPluginFromCode(code: string, manifest: { id: string; name: string; version: string; description: string }) {
-    // For now, we store plugin code in localStorage and evaluate it
-    // In production, this would write to ~/.teamy/plugins/ via Tauri fs
-    const storageKey = `teamy-plugin-code-${manifest.id}`
-    if (import.meta.client) {
-      localStorage.setItem(storageKey, code)
+  /**
+   * Install a plugin from generated code (IIFE format).
+   * Evaluates the code, registers, persists, and auto-activates.
+   */
+  async function installPluginFromCode(
+    code: string,
+    manifest: { id: string; name: string; version: string; description: string },
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const plugin = evaluatePluginCode(code)
+
+      const finalManifest = {
+        id: plugin.id || manifest.id,
+        name: plugin.name || manifest.name,
+        version: plugin.version || manifest.version,
+        description: plugin.description || manifest.description,
+      }
+
+      pluginStore.registerPlugin(finalManifest, `generated:${finalManifest.id}`)
+      pluginStore.setPluginInstance(finalManifest.id, plugin)
+
+      // Persist for reload
+      await persistPluginCode(finalManifest.id, code, finalManifest)
+
+      // Auto-activate
+      await activatePlugin(finalManifest.id)
+
+      pluginStore.addLog(finalManifest.id, {
+        timestamp: Date.now(),
+        level: 'info',
+        message: `Plugin installed: ${finalManifest.name}`,
+      })
+
+      return { success: true }
+    }
+    catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { success: false, error: message }
+    }
+  }
+
+  /**
+   * Update an existing generated plugin's code. Deactivates, updates, re-evaluates, re-activates.
+   */
+  async function updatePluginCode(
+    id: string,
+    code: string,
+  ): Promise<{ success: boolean; error?: string }> {
+    const existing = pluginStore.getPlugin(id)
+    if (!existing) {
+      return { success: false, error: `Plugin "${id}" not found` }
     }
 
-    pluginStore.registerPlugin(manifest, `generated:${manifest.id}`)
+    try {
+      if (existing.enabled) {
+        await deactivatePlugin(id)
+      }
 
-    pluginStore.addLog(manifest.id, {
-      timestamp: Date.now(),
-      level: 'info',
-      message: `Plugin installed: ${manifest.name}`,
-    })
+      const plugin = evaluatePluginCode(code)
+
+      const manifest = {
+        id: plugin.id || id,
+        name: plugin.name || existing.manifest.name,
+        version: plugin.version || existing.manifest.version,
+        description: plugin.description || existing.manifest.description,
+      }
+
+      pluginStore.setPluginInstance(id, plugin)
+      await persistPluginCode(id, code, manifest)
+      await activatePlugin(id)
+
+      pluginStore.addLog(id, {
+        timestamp: Date.now(),
+        level: 'info',
+        message: `Plugin updated and re-activated`,
+      })
+
+      return { success: true }
+    }
+    catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      pluginStore.addLog(id, {
+        timestamp: Date.now(),
+        level: 'error',
+        message: `Update failed: ${message}`,
+      })
+      return { success: false, error: message }
+    }
+  }
+
+  /**
+   * Delete a generated plugin completely (deactivate, remove from store, remove persisted code).
+   */
+  async function deletePlugin(id: string): Promise<{ success: boolean; error?: string }> {
+    const existing = pluginStore.getPlugin(id)
+    if (!existing) {
+      return { success: false, error: `Plugin "${id}" not found` }
+    }
+
+    try {
+      if (existing.enabled) {
+        await deactivatePlugin(id)
+      }
+
+      cleanupPluginHandlers(id)
+      pluginStore.removePlugin(id)
+      await removePersistedPlugin(id)
+
+      return { success: true }
+    }
+    catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return { success: false, error: message }
+    }
   }
 
   return {
@@ -365,6 +711,8 @@ export function usePlugins() {
     deactivatePlugin,
     togglePlugin,
     installPluginFromCode,
+    updatePluginCode,
+    deletePlugin,
     emitPluginEvent,
   }
 }

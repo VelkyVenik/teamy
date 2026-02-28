@@ -4,14 +4,6 @@ definePageMeta({
 })
 
 const pluginStore = usePluginStore()
-const { loadBundledPlugins } = usePlugins()
-
-// Load plugins on mount
-onMounted(async () => {
-  if (pluginStore.pluginList.length === 0) {
-    await loadBundledPlugins()
-  }
-})
 </script>
 
 <template>

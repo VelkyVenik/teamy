@@ -98,7 +98,7 @@ export function useChannels(): UseChannelsReturn {
   } | null> {
     const page = await graphFetchPage<ChannelMessage>(
       `/teams/${teamId}/channels/${channelId}/messages`,
-      { params: { $top: '1', $orderby: 'createdDateTime desc' } },
+      { params: { $top: '1' } },
     )
     const msg = page.value[0]
     if (!msg || msg.messageType !== 'message') return null

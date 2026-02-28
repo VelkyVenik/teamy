@@ -6,6 +6,8 @@ const props = defineProps<{
   loading?: boolean
   isChannel?: boolean
   lastReadDateTime?: string | null
+  chatId?: string
+  chatType?: string
 }>()
 
 const emit = defineEmits<{
@@ -131,6 +133,8 @@ function isConsecutiveMessage(index: number): boolean {
           :is-consecutive="isConsecutiveMessage(i)"
           :is-channel="isChannel"
           :highlight="isUnread(msg)"
+          :chat-id="chatId"
+          :chat-type="chatType"
           @reply="emit('reply', $event)"
           @react="(msg, type) => emit('react', msg, type)"
         />

@@ -1,4 +1,8 @@
 <script setup lang="ts">
+const emit = defineEmits<{
+  close: []
+}>()
+
 const { messages, isStreaming, error, quickActions, sendMessage, clearMessages } = useClaude()
 
 const input = ref('')
@@ -31,6 +35,53 @@ function formatTime(timestamp: number): string {
   })
 }
 
+function toolDisplayName(name: string): string {
+  const map: Record<string, string> = {
+    create_plugin: 'Creating plugin',
+    update_plugin: 'Updating plugin',
+    list_plugins: 'Listing plugins',
+    toggle_plugin: 'Toggling plugin',
+    delete_plugin: 'Deleting plugin',
+    get_plugin_logs: 'Reading logs',
+    read_file: 'Reading file',
+    write_file: 'Writing file',
+    edit_file: 'Editing file',
+    list_directory: 'Listing directory',
+    search_files: 'Searching files',
+  }
+  return map[name] || name
+}
+
+function toolSubtitle(tool: { name: string; input: Record<string, unknown> }): string | null {
+  const path = tool.input.path as string | undefined
+  if (path) return path
+  const pattern = tool.input.pattern as string | undefined
+  if (pattern) return pattern
+  const id = tool.input.id as string | undefined
+  if (id) return id
+  return null
+}
+
+function toolStatusIcon(status: string): string {
+  switch (status) {
+    case 'pending': return 'i-lucide-circle-dashed'
+    case 'running': return 'i-lucide-loader-2'
+    case 'success': return 'i-lucide-check-circle'
+    case 'error': return 'i-lucide-x-circle'
+    default: return 'i-lucide-circle'
+  }
+}
+
+function toolCardClass(status: string): string {
+  switch (status) {
+    case 'pending': return 'border-(--ui-border) bg-(--ui-bg-elevated)/50 text-(--ui-text-muted)'
+    case 'running': return 'border-indigo-500/30 bg-indigo-500/5 text-indigo-400'
+    case 'success': return 'border-green-500/30 bg-green-500/5 text-green-400'
+    case 'error': return 'border-red-500/30 bg-red-500/5 text-red-400'
+    default: return 'border-(--ui-border) bg-(--ui-bg-elevated)/50'
+  }
+}
+
 // Auto-scroll to bottom on new messages
 watch(
   () => messages.value.length,
@@ -42,9 +93,14 @@ watch(
   },
 )
 
-// Also scroll during streaming
+// Also scroll during streaming (content changes + tool call status changes)
 watch(
-  () => messages.value[messages.value.length - 1]?.content,
+  () => {
+    const last = messages.value[messages.value.length - 1]
+    if (!last) return ''
+    const toolStatus = last.toolCalls?.map((tc: { status: string }) => tc.status).join(',') ?? ''
+    return `${last.content}|${toolStatus}`
+  },
   async () => {
     await nextTick()
     if (messagesContainer.value) {
@@ -57,9 +113,17 @@ watch(
 <template>
   <div class="flex flex-col h-full bg-(--ui-bg)">
     <!-- Header -->
-    <div class="flex items-center justify-between px-4 py-3 border-b border-(--ui-border)">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-(--ui-border) min-h-[49px]">
       <div class="flex items-center gap-2">
-        <UIcon name="i-lucide-sparkles" class="text-(--ui-primary) size-5" />
+        <UButton
+          icon="i-lucide-arrow-left"
+          variant="ghost"
+          color="neutral"
+          size="xs"
+          square
+          @click="emit('close')"
+        />
+        <UIcon name="i-lucide-sparkles" class="text-(--ui-primary) size-4" />
         <span class="font-semibold text-sm">Teamy AI</span>
       </div>
       <div class="flex items-center gap-1">
@@ -68,6 +132,7 @@ watch(
           variant="ghost"
           color="neutral"
           size="xs"
+          square
           :disabled="messages.length === 0"
           @click="clearMessages"
         />
@@ -125,7 +190,32 @@ watch(
               <span class="text-xs font-medium text-(--ui-text-muted)">Teamy AI</span>
               <span class="text-xs text-(--ui-text-dimmed)">{{ formatTime(msg.timestamp) }}</span>
             </div>
+
+            <!-- Tool call cards -->
+            <div v-if="msg.toolCalls?.length" class="space-y-1.5 mb-2">
+              <details
+                v-for="tool in msg.toolCalls"
+                :key="tool.id"
+                class="rounded-lg border text-xs"
+                :class="toolCardClass(tool.status)"
+              >
+                <summary class="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer list-none select-none">
+                  <UIcon :name="toolStatusIcon(tool.status)" class="size-3.5 shrink-0" :class="tool.status === 'running' ? 'animate-spin' : ''" />
+                  <div class="flex flex-col min-w-0">
+                    <span class="font-medium truncate">{{ toolDisplayName(tool.name) }}</span>
+                    <span v-if="toolSubtitle(tool)" class="text-[10px] text-(--ui-text-dimmed) truncate">{{ toolSubtitle(tool) }}</span>
+                  </div>
+                  <span v-if="tool.status === 'success'" class="text-(--ui-text-dimmed) truncate ml-auto">Done</span>
+                  <span v-if="tool.status === 'error'" class="text-red-400 truncate ml-auto">Failed</span>
+                </summary>
+                <div v-if="tool.result" class="px-2.5 pb-2 pt-1 border-t border-current/10">
+                  <pre class="whitespace-pre-wrap break-all text-[11px] text-(--ui-text-muted) max-h-48 overflow-y-auto font-mono">{{ tool.result }}</pre>
+                </div>
+              </details>
+            </div>
+
             <div
+              v-if="msg.content"
               class="rounded-xl px-3 py-2 bg-(--ui-bg-elevated) text-sm prose prose-sm max-w-none"
               v-html="renderMarkdown(msg.content)"
             />
@@ -193,6 +283,38 @@ watch(
   </div>
 </template>
 
+<style scoped>
+:deep(.code-details) {
+  margin: 0.25rem 0;
+}
+:deep(.code-details summary) {
+  cursor: pointer;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ui-text-muted);
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.375rem;
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border);
+  user-select: none;
+}
+:deep(.code-details summary:hover) {
+  color: var(--ui-text);
+}
+:deep(.code-details pre) {
+  margin: 0.25rem 0 0;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  background: var(--ui-bg-elevated);
+  overflow-x: auto;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+:deep(.code-details code) {
+  font-family: ui-monospace, monospace;
+}
+</style>
+
 <script lang="ts">
 import DOMPurify from 'dompurify'
 
@@ -201,10 +323,11 @@ function renderMarkdown(text: string): string {
   if (!text) return ''
 
   const html = text
-    // Code blocks — escape HTML inside code blocks first
+    // Code blocks — escape HTML inside, wrap in collapsible <details>
     .replace(/```(\w*)\n([\s\S]*?)```/g, (_match, lang, code) => {
       const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      return `<pre><code class="language-${lang}">${escaped}</code></pre>`
+      const label = lang ? `Code (${lang})` : 'Code'
+      return `<details class="code-details"><summary>${label}</summary><pre><code class="language-${lang}">${escaped}</code></pre></details>`
     })
     // Inline code — escape HTML inside
     .replace(/`([^`]+)`/g, (_match: string, code: string) => {
@@ -226,7 +349,7 @@ function renderMarkdown(text: string): string {
     .replace(/\n/g, '<br>')
 
   return DOMPurify.sanitize(html, {
-    ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'a', 'br', 'p', 'ul', 'ol', 'li', 'span'],
+    ALLOWED_TAGS: ['pre', 'code', 'strong', 'em', 'a', 'br', 'p', 'ul', 'ol', 'li', 'span', 'details', 'summary'],
     ALLOWED_ATTR: ['href', 'target', 'rel', 'class'],
     ALLOW_DATA_ATTR: false,
   })

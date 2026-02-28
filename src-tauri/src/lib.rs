@@ -93,6 +93,15 @@ pub fn run() {
             // Claude AI
             commands::claude::claude_chat_stream,
             commands::claude::has_claude_api_key,
+            commands::claude::claude_chat_sync,
+            commands::claude::claude_tool_stream,
+            // Filesystem
+            commands::filesystem::fs_get_project_root,
+            commands::filesystem::fs_read_file,
+            commands::filesystem::fs_write_file,
+            commands::filesystem::fs_edit_file,
+            commands::filesystem::fs_list_directory,
+            commands::filesystem::fs_search_files,
             // Tray
             tray::set_tray_unread_count,
         ])

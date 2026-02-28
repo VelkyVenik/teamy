@@ -30,6 +30,7 @@ const { updateFromChats, totalUnread, markChatRead, markChannelRead, touchReadTi
 const { startPolling, stopPolling, setWatchedChannels } = useUnreadPoller()
 const { setTrayUnreadCount } = useTauri()
 const { graphFetch } = useGraph()
+const { emitPluginEvent } = usePlugins()
 
 const activeChatId = ref<string | null>(null)
 const activeTeamId = ref<string | null>(null)
@@ -100,6 +101,7 @@ function selectChat(chat: Chat) {
   threadMessage.value = null
   threadLastRead.value = getSnapshotLastRead(chat.id, chat.viewpoint?.lastMessageReadDateTime)
   markChatRead(chat.id)
+  emitPluginEvent('chat:switched', { chatId: chat.id, chatType: chat.chatType })
 }
 
 async function selectChannel(teamId: string, channelId: string) {
@@ -107,6 +109,7 @@ async function selectChannel(teamId: string, channelId: string) {
   activeTeamId.value = teamId
   activeChannelId.value = channelId
   threadMessage.value = null
+  emitPluginEvent('chat:switched', { chatId: `${teamId}:${channelId}`, chatType: 'channel' })
 
   const unreadKey = `${teamId}:${channelId}`
   threadLastRead.value = getSnapshotLastRead(unreadKey)
@@ -141,11 +144,12 @@ async function selectChannel(teamId: string, channelId: string) {
 async function handleSend(content: string, images: PendingImage[] = []) {
   if (currentView.value === 'chat' && activeChatId.value) {
     await sendChatMessage(content, 'text', images)
-    // User sent a message — they're caught up, clear the divider
     threadLastRead.value = new Date().toISOString()
+    emitPluginEvent('message:sent', { chatId: activeChatId.value, content })
   }
   else if (currentView.value === 'channel' && activeTeamId.value && activeChannelId.value) {
     await sendChannelMessage(activeTeamId.value, activeChannelId.value, content, 'text', images)
+    emitPluginEvent('message:sent', { chatId: `${activeTeamId.value}:${activeChannelId.value}`, content })
     const fresh = await fetchChannelMessages(activeTeamId.value, activeChannelId.value)
     const key = channelCacheKey(activeTeamId.value, activeChannelId.value)
     channelCache.delete(key)
@@ -495,7 +499,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Empty state -->
-      <div v-else-if="currentView === 'empty'" class="flex-1 flex items-center justify-center">
+      <div v-else-if="currentView === 'empty' && !claudePanelOpen" class="flex-1 flex items-center justify-center">
         <div class="text-center space-y-3">
           <UIcon name="i-lucide-message-circle" class="size-12 text-(--ui-text-muted)" />
           <p class="text-sm text-(--ui-text-muted)">Select a chat or channel to start messaging</p>
@@ -509,7 +513,8 @@ onUnmounted(() => {
 
       <!-- Chat / channel view -->
       <template v-else>
-        <div class="flex items-center justify-between px-5 py-2.5 border-b border-(--ui-border) min-h-[49px]">
+        <!-- Chat header — hidden when Claude panel replaces the view -->
+        <div v-if="!claudePanelOpen" class="flex items-center justify-between px-5 py-2.5 border-b border-(--ui-border) min-h-[49px]">
           <div class="flex items-center gap-1.5">
             <UIcon
               v-if="isChannel"
@@ -532,7 +537,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="flex-1 flex min-h-0">
+        <div v-if="!claudePanelOpen" class="flex-1 flex min-h-0">
           <div class="flex-1 flex flex-col min-w-0">
             <MessageThread
               ref="messageThreadRef"
@@ -540,6 +545,8 @@ onUnmounted(() => {
               :loading="displayLoading"
               :is-channel="isChannel"
               :last-read-date-time="threadLastRead"
+              :chat-id="activeChatId ?? (activeTeamId && activeChannelId ? `${activeTeamId}:${activeChannelId}` : undefined)"
+              :chat-type="isChannel ? 'channel' : (chats.find(c => c.id === activeChatId)?.chatType)"
               @reply="handleReply"
               @react="handleReact"
             />
@@ -570,19 +577,10 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- Claude panel -->
-    <Transition
-      enter-active-class="transition-all duration-200 ease-out"
-      leave-active-class="transition-all duration-150 ease-in"
-      enter-from-class="w-0 opacity-0"
-      enter-to-class="w-[360px] opacity-100"
-      leave-from-class="w-[360px] opacity-100"
-      leave-to-class="w-0 opacity-0"
-    >
-      <div v-if="claudePanelOpen" class="w-[360px] flex-shrink-0 border-l border-(--ui-border) overflow-hidden">
-        <ClaudePanel />
-      </div>
-    </Transition>
+    <!-- Claude panel — takes full main area when open -->
+    <div v-if="claudePanelOpen" class="flex-1 border-l border-(--ui-border) overflow-hidden">
+      <ClaudePanel @close="claudePanelOpen = false" />
+    </div>
 
     <!-- Command palette overlay -->
     <Teleport to="body">

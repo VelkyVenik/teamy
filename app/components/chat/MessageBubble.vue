@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import DOMPurify from 'dompurify'
 import type { ChatMessage } from '~~/types/graph'
+import type { PluginMessage } from '~~/types/plugin'
 
 const props = defineProps<{
   message: ChatMessage
@@ -9,6 +10,8 @@ const props = defineProps<{
   hideActions?: boolean
   isChannel?: boolean
   highlight?: boolean
+  chatId?: string
+  chatType?: string
 }>()
 
 const emit = defineEmits<{
@@ -32,6 +35,34 @@ const formattedTime = computed(() => {
 
 const showActions = ref(false)
 const reactionPickerOpen = ref(false)
+const pluginMenuOpen = ref(false)
+
+const pluginActions = computed(() => getMessageActions())
+
+function toPluginMessage(msg: ChatMessage): PluginMessage {
+  return {
+    id: msg.id,
+    chatId: props.chatId || '',
+    chatType: (props.chatType as PluginMessage['chatType']) || 'oneOnOne',
+    sender: {
+      id: msg.from?.user?.id || '',
+      name: msg.from?.user?.displayName || 'Unknown',
+    },
+    content: msg.body?.content?.replace(/<[^>]*>/g, '') || '',
+    preview: msg.body?.content?.replace(/<[^>]*>/g, '').slice(0, 100) || '',
+    createdAt: msg.createdDateTime,
+  }
+}
+
+function handlePluginAction(handler: (msg: PluginMessage) => void) {
+  pluginMenuOpen.value = false
+  try {
+    handler(toPluginMessage(props.message))
+  }
+  catch (err) {
+    console.error('[MessageBubble] Plugin action failed:', err)
+  }
+}
 
 const reactionTypes = [
   { type: 'like', emoji: '\u{1F44D}' },
@@ -266,6 +297,29 @@ watch([messageBodyRef, () => props.message.id], () => {
             @click="emit('reply', message)"
           />
         </UTooltip>
+        <UPopover v-if="pluginActions.length > 0" v-model:open="pluginMenuOpen">
+          <UTooltip text="More actions" :delay-duration="300">
+            <UButton
+              icon="i-lucide-ellipsis"
+              variant="ghost"
+              color="neutral"
+              size="xs"
+              square
+            />
+          </UTooltip>
+          <template #content>
+            <div class="py-1 min-w-[140px]">
+              <button
+                v-for="action in pluginActions"
+                :key="action.label"
+                class="w-full text-left px-3 py-1.5 text-sm text-(--ui-text) hover:bg-(--ui-bg-elevated) transition-colors cursor-pointer"
+                @click="handlePluginAction(action.handler)"
+              >
+                {{ action.label }}
+              </button>
+            </div>
+          </template>
+        </UPopover>
       </div>
     </Transition>
   </div>

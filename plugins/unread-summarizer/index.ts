@@ -45,7 +45,7 @@ export default {
     ctx.registerCommand('summarize-unread', 'Summarize recent unread messages', async () => {
       if (unreadMessages.length === 0) {
         ctx.log('info', 'No unread messages to summarize')
-        return
+        return 'No unread messages to summarize.'
       }
 
       ctx.log('info', `Summarizing ${unreadMessages.length} unread messages`)
@@ -61,22 +61,13 @@ export default {
         : `Summarize the following chat messages briefly.\n\nMessages:\n${messageText}`
 
       try {
-        const response = await $fetch('/api/claude/chat', {
-          method: 'POST',
-          body: {
-            messages: [
-              {
-                role: 'user',
-                content: prompt,
-              },
-            ],
-            stream: false,
+        const summary = await ctx.claudeChat([
+          {
+            role: 'user',
+            content: prompt,
           },
-        })
+        ])
 
-        const summary = (response as any)?.content?.[0]?.text || 'Summary generation failed'
-
-        // Store the summary
         await ctx.storage.set(`summary-${Date.now()}`, {
           messageCount: unreadMessages.length,
           summary,
@@ -84,10 +75,12 @@ export default {
         })
 
         ctx.log('info', `Summary generated: ${summary.slice(0, 200)}`)
+        return summary
       }
       catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown error'
         ctx.log('error', `Summary generation failed: ${message}`)
+        return `Summary failed: ${message}`
       }
     })
   },

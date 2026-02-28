@@ -25,6 +25,23 @@ const textareaRef = ref<{ textareaRef?: HTMLTextAreaElement }>()
 const pendingImages = ref<PendingImage[]>([])
 const isDragging = ref(false)
 
+// Plugin slash commands
+const commandOutput = ref<string | null>(null)
+const availableCommands = computed(() => getRegisteredCommands())
+const matchingCommands = computed(() => {
+  const text = content.value.trim()
+  if (!text.startsWith('/')) return []
+  const typed = text.split(/\s/)[0]!.slice(1).toLowerCase()
+  return availableCommands.value.filter(cmd => cmd.name.toLowerCase().startsWith(typed))
+})
+
+function selectCommand(name: string) {
+  const parts = content.value.trim().split(/\s+/)
+  parts[0] = `/${name}`
+  content.value = parts.join(' ') + (parts.length === 1 ? ' ' : '')
+  nextTick(() => textareaRef.value?.textareaRef?.focus())
+}
+
 function addImages(files: File[]) {
   for (const file of files) {
     if (!file.type.startsWith('image/')) continue
@@ -70,10 +87,25 @@ function handleDrop(e: DragEvent) {
   addImages(files)
 }
 
-function handleSend() {
+async function handleSend() {
   const text = content.value.trim()
   if (!text && pendingImages.value.length === 0) return
   if (props.loading) return
+
+  // Try to execute as plugin slash command
+  if (text.startsWith('/') && pendingImages.value.length === 0) {
+    const spaceIdx = text.indexOf(' ')
+    const cmdName = spaceIdx === -1 ? text.slice(1) : text.slice(1, spaceIdx)
+    const cmdArg = spaceIdx === -1 ? '' : text.slice(spaceIdx + 1)
+    const { executed, result } = await executeCommand(cmdName, cmdArg)
+    if (executed) {
+      content.value = ''
+      commandOutput.value = result || `/${cmdName} executed`
+      setTimeout(() => { commandOutput.value = null }, 15000)
+      nextTick(() => textareaRef.value?.textareaRef?.focus())
+      return
+    }
+  }
 
   const images = [...pendingImages.value]
   emit('send', text, images)
@@ -147,6 +179,31 @@ onUnmounted(() => {
       @dragleave="isDragging = false"
       @drop.prevent="handleDrop"
     >
+      <!-- Plugin command output -->
+      <div v-if="commandOutput" class="mb-2 flex items-start gap-2 px-1 py-2 rounded-md bg-(--ui-bg-elevated) border border-(--ui-border) text-sm text-(--ui-text)">
+        <UIcon name="i-lucide-puzzle" class="size-4 text-(--ui-primary) shrink-0 mt-0.5" />
+        <p class="flex-1 whitespace-pre-wrap">{{ commandOutput }}</p>
+        <button class="text-(--ui-text-dimmed) hover:text-(--ui-text) shrink-0" @click="commandOutput = null">
+          <UIcon name="i-lucide-x" class="size-3.5" />
+        </button>
+      </div>
+
+      <!-- Plugin command suggestions -->
+      <div v-if="matchingCommands.length > 0" class="mb-2">
+        <div class="flex flex-wrap gap-1">
+          <button
+            v-for="cmd in matchingCommands"
+            :key="cmd.name"
+            class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-(--ui-bg-elevated) hover:bg-(--ui-bg-elevated)/80 border border-(--ui-border) text-(--ui-text) cursor-pointer transition-colors"
+            @click="selectCommand(cmd.name)"
+          >
+            <UIcon name="i-lucide-puzzle" class="size-3 text-(--ui-text-muted)" />
+            <span class="font-medium">/{{ cmd.name }}</span>
+            <span class="text-(--ui-text-dimmed)">{{ cmd.description }}</span>
+          </button>
+        </div>
+      </div>
+
       <!-- Image previews -->
       <div v-if="pendingImages.length" class="flex flex-wrap gap-2 mb-2">
         <div

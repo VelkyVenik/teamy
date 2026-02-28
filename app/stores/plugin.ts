@@ -99,6 +99,15 @@ export const usePluginStore = defineStore('plugin', () => {
     }
   }
 
+  function clearRegistrations(id: string) {
+    const plugin = plugins.value.get(id)
+    if (plugin) {
+      plugin.registeredCommands = []
+      plugin.registeredMessageActions = []
+      plugin.hasSidebarPanel = false
+    }
+  }
+
   return {
     plugins,
     pluginList,
@@ -115,5 +124,6 @@ export const usePluginStore = defineStore('plugin', () => {
     addRegisteredCommand,
     addRegisteredMessageAction,
     setHasSidebarPanel,
+    clearRegistrations,
   }
 })

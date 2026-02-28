@@ -34,21 +34,12 @@ export default {
       ctx.log('info', `Translating message from ${msg.sender.name} to ${targetLang}`)
 
       try {
-        // Call the Claude API through the server proxy
-        const response = await $fetch('/api/claude/chat', {
-          method: 'POST',
-          body: {
-            messages: [
-              {
-                role: 'user',
-                content: `Translate the following message to ${targetLang}. Only output the translation, nothing else.\n\nMessage: "${msg.content}"`,
-              },
-            ],
-            stream: false,
+        const translated = await ctx.claudeChat([
+          {
+            role: 'user',
+            content: `Translate the following message to ${targetLang}. Only output the translation, nothing else.\n\nMessage: "${msg.content}"`,
           },
-        })
-
-        const translated = (response as any)?.content?.[0]?.text || 'Translation failed'
+        ])
         ctx.log('info', `Translation result: ${translated.slice(0, 100)}`)
 
         // Store the translation
@@ -65,9 +56,25 @@ export default {
       }
     })
 
-    ctx.registerCommand('translate', 'Translate the last message', async (text: string) => {
+    ctx.registerCommand('translate', 'Translate text to your target language', async (text: string) => {
+      if (!text) return 'Usage: /translate <text to translate>'
       const targetLang = ctx.settings.get<string>('targetLanguage') || 'English'
       ctx.log('info', `Translating text to ${targetLang}: ${text.slice(0, 50)}...`)
+      try {
+        const translated = await ctx.claudeChat([
+          {
+            role: 'user',
+            content: `Translate the following text to ${targetLang}. Only output the translation, nothing else.\n\n"${text}"`,
+          },
+        ])
+        ctx.log('info', `Translation: ${translated.slice(0, 100)}`)
+        return `${targetLang}: ${translated}`
+      }
+      catch (err) {
+        const message = err instanceof Error ? err.message : 'Unknown error'
+        ctx.log('error', `Translation failed: ${message}`)
+        return `Translation failed: ${message}`
+      }
     })
   },
 
